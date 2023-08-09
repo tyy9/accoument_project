@@ -8,14 +8,28 @@
 #include <sys/mman.h>
 #include "bmp_plus.h"
 #include "font.h"
+#include<dirent.h>
 
+typedef struct LNode{
+    char *file_name;
+    struct LNode *next;
+}LNode,*LinkList;
+
+//全局变量
 int fd_touch;
 struct input_event buf;
 unsigned int x, y;
 
+//函数声明
 int inittouch_device();
 int lock_menu();
+int main_menu();
+int update_file();
 struct LcdDevice *init_lcd(const char *device);
+
+
+
+
 int inittouch_device()
 {
     fd_touch = open("/dev/input/event0", O_RDONLY);
@@ -69,10 +83,6 @@ int lock_menu()
 
     // 字体大小的设置
     fontSetSize(f, 30);
-
-    // 创建一个画板（点阵图）
-    // 画板宽400，高90，色深32位色即4字节，画板颜色为白色
-    bitmap *bm = createBitmapWithInit(180, 90, 4, getColor(0, 0, 0, 0));
 
     while (1)
     {
@@ -256,7 +266,9 @@ int lock_menu()
                         if (strncmp("1234", pw, 6) == 0)
                         {
                             printf("登录成功\n");
-
+                            // 创建一个画板（点阵图）
+                            // 画板宽400，高90，色深32位色即4字节，画板颜色为白色
+                            bitmap *bm = createBitmapWithInit(180, 90, 4, getColor(0, 0, 0, 0));
                             char buf[] = "登录成功\n2秒后自动\n转跳";
 
                             // 将字体写到点阵图上
@@ -265,15 +277,19 @@ int lock_menu()
                             // buf:显示的内容
                             // getColor(0,100,100,100):字体颜色
                             // 默认为0
-                            fontPrint(f, bm, 0,0, buf, getColor(0, 0, 255, 0), 0);
+                            fontPrint(f, bm, 0, 0, buf, getColor(0, 0, 255, 0), 0);
 
                             // 把字体框输出到LCD屏幕上
                             // lcd->mp:mmap后内存映射首地址
                             // 0,100:画板显示的起始位置
                             // bm:画板
                             show_font_to_lcd(lcd->mp, 20, 120, bm);
+                            //卸载字体
+	                        fontUnload(f);
+                            destroyBitmap(bm);
                             sleep(3);
-                            lcd_draw_bmp("01.bmp", 0, 0);
+                            main_menu();
+                            //lcd_draw_bmp("01.bmp", 0, 0);
                             break;
                         }
                         else
@@ -282,6 +298,7 @@ int lock_menu()
                             index = 0;
                             memset(pw, 0, 7);
                             password_index = 0;
+                             bitmap *bm = createBitmapWithInit(180, 90, 4, getColor(0, 0, 0, 0));
                             char buf[] = "登录失败\n密码有误";
 
                             // 将字体写到点阵图上
@@ -290,7 +307,7 @@ int lock_menu()
                             // buf:显示的内容
                             // getColor(0,100,100,100):字体颜色
                             // 默认为0
-                            fontPrint(f, bm, 0,0, buf, getColor(0, 0, 0, 255), 0);
+                            fontPrint(f, bm, 0, 0, buf, getColor(0, 0, 0, 255), 0);
 
                             // 把字体框输出到LCD屏幕上
                             // lcd->mp:mmap后内存映射首地址
@@ -305,8 +322,8 @@ int lock_menu()
                                     lcd_draw_point(x, y, 0X00FFFFFF);
                                 }
                             }
-                           sleep(3);
-                            //自动清除提示
+                            sleep(3);
+                            // 自动清除提示
                             for (int y = 120; y <= 290; y++)
                             {
                                 for (int x = 20; x <= 200; x++)
@@ -314,10 +331,111 @@ int lock_menu()
                                     lcd_draw_point(x, y, 0X00000000);
                                 }
                             }
+                            destroyBitmap(bm);
                         }
                     }
                 }
             }
         }
     }
+    return 1;
+}
+
+int main_menu(){
+    unsigned int x,y;
+    lcd_draw_bmp("main_menu.bmp",0,0);
+    struct input_event buf;//触摸屏数据结构体
+    while(1){
+        //读取触摸屏数据
+        read(fd_touch,&buf,sizeof(buf));
+        if(buf.type==EV_ABS){
+            //如果事件类型为绝对位置事件，判断为触摸
+            //第一次返回X值，第二次返回Y值
+            if(buf.code==ABS_X){
+                x=buf.value*800/1024;
+                printf("x=%d\n",x);
+            }
+            if(buf.code==ABS_Y){
+                y=buf.value*480/600;
+                printf("y=%d\n",y);
+            }
+        }
+        //判断当前点击操作是否释放
+        if(buf.type==EV_KEY&&buf.code==BTN_TOUCH){
+            //处于按键或触摸状态
+            if(buf.value){
+
+            }else{
+                if(x>=100*800/1024&&x<=700*800/1024){
+                    if(y>=50*480/600&&y<=150*480/600){
+                        printf("更新资源\n");
+                        update_file();
+                    }
+                    else if(y>150*480/600&&y<=250*480/600){
+                        printf("播放资源\n");
+                    }
+                    else if(y>250*480/600&&y<=350*480/600){
+                        printf("刮刮乐\n");
+                    }
+                    else if(y>350*480/600&&y<=450*480/600){
+                        printf("退出\n");
+                        return 0;
+                    }
+                }
+            }
+        }
+    }
+    lcd_close();
+    return 0;
+}
+
+int update_file(){
+    DIR *dirp=opendir("/root/my_test/bmp_resource/");
+     if(dirp==NULL){
+        perror("目录打开失败\n");
+        return 0;
+    }
+    while(1){
+        struct dirent *file_dir=readdir(dirp);
+        if(file_dir!=NULL){
+            printf("文件名:%s",file_dir->d_name);
+            switch (file_dir->d_type)
+            {
+            case DT_UNKNOWN:
+                printf("文件类型为:位置类型");
+                break;
+            case DT_FIFO:
+                printf("文件类型为:管道文件\n");
+                break;
+            case DT_CHR:
+                printf("文件类型为:字符设备文件\n");
+                break;
+            case DT_DIR:
+                printf("文件类型为:目录文件\n");
+                break;
+            case DT_BLK:
+                printf("文件类型为:块设备文件\n");
+                break;
+            case DT_REG:
+                printf("文件类型为:普通文件\n");
+                break;
+            case DT_LNK:
+                printf("文件类型为:连接文件\n");
+                break;
+             case DT_SOCK:
+                printf("文件类型为:本地套接口文件\n");
+                break;
+             case DT_WHT:
+                printf("文件类型为: whiteout\n");
+                break;
+            default:
+                break;
+            }
+        }else{
+            printf("读取结束\n");
+            break;
+        }
+    }
+    closedir(dirp);
+    return 0;
 }

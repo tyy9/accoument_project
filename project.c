@@ -8,7 +8,10 @@ int main(){
         return 0;
     }
     lcd_open();
+    while(1){
     lock_menu();
+    }
+
     lcd_close();
     close(fd_touch);
     return 0;
