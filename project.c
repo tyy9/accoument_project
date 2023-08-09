@@ -8,6 +8,7 @@ int main(){
         return 0;
     }
     lcd_open();
+    initLinkList(&head);
     while(1){
     lock_menu();
     }

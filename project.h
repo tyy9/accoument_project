@@ -8,27 +8,47 @@
 #include <sys/mman.h>
 #include "bmp_plus.h"
 #include "font.h"
-#include<dirent.h>
-
-typedef struct LNode{
+#include <dirent.h>
+#include <stdlib.h>
+#include<time.h>
+typedef struct LNode
+{
     char *file_name;
     struct LNode *next;
-}LNode,*LinkList;
+} LNode, *LinkList;
 
-//全局变量
+// 全局变量
 int fd_touch;
 struct input_event buf;
 unsigned int x, y;
-
-//函数声明
+LinkList head;
+LNode *Tail; // 尾插
+// 函数声明
 int inittouch_device();
 int lock_menu();
 int main_menu();
 int update_file();
 struct LcdDevice *init_lcd(const char *device);
+// 链表函数
+int initLinkList(LinkList *head);
+int addLinkList(LinkList head, const char *file_name);
+int destroyLinkList(LinkList *head);
+int formatLinkList(LinkList *head); // 格式化链表
+void showLinkList(LinkList head);
+int addLinkListData_to_File(LinkList head);
 
-
-
+int initLinkList(LinkList *head)
+{
+    *head = (LNode *)malloc(sizeof(LNode));
+    if (*head == NULL)
+    {
+        perror("链表初始化失败\n");
+        return 0;
+    }
+    (*head)->next = NULL;
+    printf("链表初始化成功\n");
+    return 1;
+}
 
 int inittouch_device()
 {
@@ -39,6 +59,77 @@ int inittouch_device()
         return -1;
     }
     return 0;
+}
+
+int addLinkList(LinkList head, const char *file_name)
+{
+    // 查找尾指针
+    LNode *temp = head->next, *Tail = head;
+    while (temp != NULL)
+    {
+        Tail = temp;
+        temp = temp->next;
+    }
+    LNode *p = NULL;
+    p = (LNode *)malloc(sizeof(LNode));
+    if (p == NULL)
+    {
+        perror("新节点分配空间失败\n");
+        return 0;
+    }
+    p->file_name = malloc(sizeof(file_name));
+    strcpy(p->file_name, file_name);
+    p->next = NULL;
+    Tail->next = p;
+    Tail = p;
+    return 0;
+}
+
+void showLinkList(LinkList head)
+{
+    LNode *p = head->next;
+    printf("目前链表的数据如下:\n");
+    while (p != NULL)
+    {
+        printf("file_name:%s\n", p->file_name);
+        p = p->next;
+    }
+}
+
+int addLinkListData_to_File(LinkList head)
+{
+    FILE *fp = fopen("/root/my_test/file_list.txt", "w+");
+    // 初始化Lcd
+    struct LcdDevice *lcd = init_lcd("/dev/fb0");
+    // 文件自动创建，每次写前都将清空
+    if (fp == NULL)
+    {
+        perror("文件打开失败\n");
+        return 0;
+    }
+    LNode *p = head->next;
+    while (p != NULL)
+    {
+        printf("文件写入:%s\n", p->file_name);
+        fprintf(fp, "%s\n", p->file_name);
+        fflush(0);
+        char buf[50];
+        memset(buf, 0, sizeof(buf));
+        strcat(buf, "更新图片播放列表文件--");
+        strcat(buf, p->file_name);
+        // 加载字体
+        font *f = fontLoad("simfang.ttf");
+        // 字体大小的设置
+        fontSetSize(f, 30);
+        bitmap *bm = createBitmapWithInit(600, 30, 4, getColor(1, 0, 0, 0));
+        fontPrint(f, bm, 0, 0, buf, getColor(0, 255, 255, 255), 0);
+        show_font_to_lcd(lcd->mp, 200, 370, bm);
+        // 卸载字体
+        fontUnload(f);
+        destroyBitmap(bm);
+        p = p->next;
+        sleep(1);
+    }
 }
 
 struct LcdDevice *init_lcd(const char *device)
@@ -241,12 +332,19 @@ int lock_menu()
                         pw[index] = '\0';
                         index--;
                         password_index--;
-                        for (int y = 20; y <= 100; y++)
+                        if (index >= 0)
                         {
-                            for (int x = 200 + 100 * password_index; x <= 200 + 100 * (password_index + 1); x++)
+                            for (int y = 20; y <= 100; y++)
                             {
-                                lcd_draw_point(x, y, 0X00FFFFFF);
+                                for (int x = 200 + 100 * password_index; x <= 200 + 100 * (password_index + 1); x++)
+                                {
+                                    lcd_draw_point(x, y, 0X00FFFFFF);
+                                }
                             }
+                        }
+                        if (password_index < 0)
+                        {
+                            password_index = 0;
                         }
                         if (index < 0)
                         {
@@ -284,12 +382,12 @@ int lock_menu()
                             // 0,100:画板显示的起始位置
                             // bm:画板
                             show_font_to_lcd(lcd->mp, 20, 120, bm);
-                            //卸载字体
-	                        fontUnload(f);
+                            // 卸载字体
+                            fontUnload(f);
                             destroyBitmap(bm);
                             sleep(3);
                             main_menu();
-                            //lcd_draw_bmp("01.bmp", 0, 0);
+                            // lcd_draw_bmp("01.bmp", 0, 0);
                             break;
                         }
                         else
@@ -298,7 +396,7 @@ int lock_menu()
                             index = 0;
                             memset(pw, 0, 7);
                             password_index = 0;
-                             bitmap *bm = createBitmapWithInit(180, 90, 4, getColor(0, 0, 0, 0));
+                            bitmap *bm = createBitmapWithInit(180, 90, 4, getColor(0, 0, 0, 0));
                             char buf[] = "登录失败\n密码有误";
 
                             // 将字体写到点阵图上
@@ -341,49 +439,66 @@ int lock_menu()
     return 1;
 }
 
-int main_menu(){
-    unsigned int x,y;
-    lcd_draw_bmp("main_menu.bmp",0,0);
-    struct input_event buf;//触摸屏数据结构体
-    while(1){
-        //读取触摸屏数据
-        read(fd_touch,&buf,sizeof(buf));
-        if(buf.type==EV_ABS){
-            //如果事件类型为绝对位置事件，判断为触摸
-            //第一次返回X值，第二次返回Y值
-            if(buf.code==ABS_X){
-                x=buf.value*800/1024;
-                printf("x=%d\n",x);
+int main_menu()
+{
+    unsigned int x, y;
+    lcd_draw_bmp("main_menu.bmp", 0, 0);
+    struct input_event buf; // 触摸屏数据结构体
+
+    while (1)
+    {
+        // 读取触摸屏数据
+        read(fd_touch, &buf, sizeof(buf));
+        if (buf.type == EV_ABS)
+        {
+            // 如果事件类型为绝对位置事件，判断为触摸
+            // 第一次返回X值，第二次返回Y值
+            if (buf.code == ABS_X)
+            {
+                x = buf.value * 800 / 1024;
+                printf("x=%d\n", x);
             }
-            if(buf.code==ABS_Y){
-                y=buf.value*480/600;
-                printf("y=%d\n",y);
+            if (buf.code == ABS_Y)
+            {
+                y = buf.value * 480 / 600;
+                printf("y=%d\n", y);
             }
         }
-        //判断当前点击操作是否释放
-        if(buf.type==EV_KEY&&buf.code==BTN_TOUCH){
-            //处于按键或触摸状态
-            if(buf.value){
-
-            }else{
-                if(x>=20*800/1024&&x<=120*800/1024){
-                    if(y>=30*480/600&&y<=100*480/600){
+        // 判断当前点击操作是否释放
+        if (buf.type == EV_KEY && buf.code == BTN_TOUCH)
+        {
+            // 处于按键或触摸状态
+            if (buf.value)
+            {
+            }
+            else
+            {
+                if (x >= 20 * 800 / 1024 && x <= 120 * 800 / 1024)
+                {
+                    if (y >= 30 * 480 / 600 && y <= 100 * 480 / 600)
+                    {
                         printf("更新资源\n");
                         update_file();
                     }
                 }
-                if(x>120*800/1024&&x<=220*800/1024){
-                    if(y>=30*480/600&&y<=100*480/600){
+                if (x > 120 * 800 / 1024 && x <= 220 * 800 / 1024)
+                {
+                    if (y >= 30 * 480 / 600 && y <= 100 * 480 / 600)
+                    {
                         printf("播放器\n");
                     }
                 }
-                if(x>220*800/1024&&x<=320*800/1024){
-                    if(y>=30*480/600&&y<=100*480/600){
+                if (x > 220 * 800 / 1024 && x <= 320 * 800 / 1024)
+                {
+                    if (y >= 30 * 480 / 600 && y <= 100 * 480 / 600)
+                    {
                         printf("刮刮乐\n");
                     }
                 }
-                if(x>=720*800/1024&&x<=800*800/1024){
-                    if(y>=380*480/600&&y<=480*480/600){
+                if (x >= 720 * 800 / 1024 && x <= 800 * 800 / 1024)
+                {
+                    if (y >= 380 * 480 / 600 && y <= 480 * 480 / 600)
+                    {
                         printf("退出\n");
                         break;
                     }
@@ -394,53 +509,91 @@ int main_menu(){
     return 0;
 }
 
-int update_file(){
-    DIR *dirp=opendir("/root/my_test/bmp_resource/");
-     if(dirp==NULL){
+int update_file()
+{
+    lcd_draw_bmp("update_file.bmp", 0, 0);
+    DIR *dirp = opendir("/root/my_test/bmp_resource/");
+    // 初始化Lcd
+    struct LcdDevice *lcd = init_lcd("/dev/fb0");
+    char cur_dir[] = ".";          // 当前目录
+    char up_dir[] = "..";          // 上级目录
+    int x_limit = 456, x_cur = 20; // 进度条的限制
+    if (dirp == NULL)
+    {
         perror("目录打开失败\n");
         return 0;
     }
-    while(1){
-        struct dirent *file_dir=readdir(dirp);
-        if(file_dir!=NULL){
-            printf("文件名:%s",file_dir->d_name);
-            switch (file_dir->d_type)
+    while (1)
+    {
+        struct dirent *file_dir = readdir(dirp);
+        if (file_dir != NULL)
+        {
+            if (strcmp(file_dir->d_name, cur_dir) != 0 && strcmp(file_dir->d_name, up_dir) != 0)
             {
-            case DT_UNKNOWN:
-                printf("文件类型为:位置类型");
-                break;
-            case DT_FIFO:
-                printf("文件类型为:管道文件\n");
-                break;
-            case DT_CHR:
-                printf("文件类型为:字符设备文件\n");
-                break;
-            case DT_DIR:
-                printf("文件类型为:目录文件\n");
-                break;
-            case DT_BLK:
-                printf("文件类型为:块设备文件\n");
-                break;
-            case DT_REG:
-                printf("文件类型为:普通文件\n");
-                break;
-            case DT_LNK:
-                printf("文件类型为:连接文件\n");
-                break;
-             case DT_SOCK:
-                printf("文件类型为:本地套接口文件\n");
-                break;
-             case DT_WHT:
-                printf("文件类型为: whiteout\n");
-                break;
-            default:
-                break;
+                // 不读取上级与当前目录
+                char buf[30];
+                memset(buf, 0, sizeof(buf));
+                strcpy(buf, file_dir->d_name);
+                // 加载字体
+                font *f = fontLoad("simfang.ttf");
+                // 字体大小的设置
+                fontSetSize(f, 30);
+                bitmap *bm = createBitmapWithInit(600, 30, 4, getColor(1, 0, 0, 0));
+                // 将字体写到点阵图上
+                // f:操作的字库
+                // 70,0:字体在画板中的起始位置（y,x)
+                // buf:显示的内容
+                // getColor(0,100,100,100):字体颜色
+                // 默认为0
+                fontPrint(f, bm, 0, 0, buf, getColor(0, 255, 255, 255), 0);
+                // 把字体框输出到LCD屏幕上
+                // lcd->mp:mmap后内存映射首地址
+                // 0,100:画板显示的起始位置(x,y)
+                // bm:画板
+                show_font_to_lcd(lcd->mp, 200, 370, bm);
+                // 卸载字体
+                fontUnload(f);
+                destroyBitmap(bm);
+                // 将数据存进链表
+                addLinkList(head, file_dir->d_name);
+                printf("文件名:%s\n", file_dir->d_name);
+                // ~60%
+                if (x_cur <= x_limit)
+                {
+                    int x=x_cur,y=400;
+                    while(x<=x_cur+50){
+                        for(int y=400;y<=440;y++){
+                            lcd_draw_point(x,y,0X00FFFFFF);
+                        }
+                        x++;
+                        usleep(1000);
+                    }
+                    x_cur+=50;
+                }
             }
-        }else{
+        }
+        else
+        {
             printf("读取结束\n");
+            showLinkList(head);
             break;
         }
+
+        sleep(1);
     }
+    printf("end\n");
     closedir(dirp);
+    // 将数据写进文件
+    addLinkListData_to_File(head);
+    // 40%
+    for (int y = 400; y <= 440; y++)
+    {
+        for (int x = x_cur; x <= 780; x++)
+        {
+            lcd_draw_point(x, y, 0x00FFFFFF);
+        }
+    }
+    sleep(1);
+    lcd_draw_bmp("main_menu.bmp", 0, 0);
     return 0;
 }
