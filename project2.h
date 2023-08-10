@@ -21,14 +21,15 @@ typedef struct LNode
 } LNode, *LinkList;
 
 // 全局变量
-int fd_touch, fd_touch2;
+int fd_touch;
 struct input_event buf;
 unsigned int x, y;
+unsigned int x2,y2;
 LinkList head;
 LNode *Tail;         // 尾插
 sem_t input, output; // I/O信号量
 
-int flag = 0;
+
 
 // 函数声明
 int inittouch_device();
@@ -64,7 +65,7 @@ int initLinkList(LinkList *head)
 
 int inittouch_device()
 {
-    fd_touch2 = open("/dev/input/event0", O_RDONLY);
+    fd_touch = open("/dev/input/event0", O_RDONLY);
     if (fd_touch < 0)
     {
         perror("触摸屏打开失败\n");
@@ -266,7 +267,7 @@ int lock_menu()
     {
         sem_wait(&output);
         printf("lock-x:%d,y:%d\n", x, y);
-       // read(fd_touch2, &buf, sizeof(buf));
+        // read(fd_touch2, &buf, sizeof(buf));
         // 判断当前点击操作是否释放
         // 1,4,7
         if (x >= 156 && x <= 234)
@@ -440,8 +441,10 @@ int lock_menu()
                     destroyBitmap(bm);
                     free(lcd);
                     sleep(3);
+                    sem_post(&input);
                     main_menu();
                     // lcd_draw_bmp("01.bmp", 0, 0);
+                    //lcd_draw_bmp("main_menu.bmp", 0, 0);
                     break;
                 }
                 else
@@ -477,72 +480,50 @@ int lock_menu()
 
 int main_menu()
 {
-    unsigned int x, y;
     lcd_draw_bmp("main_menu.bmp", 0, 0);
     struct input_event buf; // 触摸屏数据结构体
-
     while (1)
     {
-
+       
         // 读取触摸屏数据
-        read(fd_touch, &buf, sizeof(buf));
-        if (buf.type == EV_ABS)
+        sem_wait(&output);
+         printf("main-x:%d,y:%d\n", x, y);
+        // 处于按键或触摸状态
+        if (x >= 20 * 800 / 1024 && x <= 120 * 800 / 1024)
         {
-            // 如果事件类型为绝对位置事件，判断为触摸
-            // 第一次返回X值，第二次返回Y值
-            if (buf.code == ABS_X)
+            if (y >= 30 * 480 / 600 && y <= 100 * 480 / 600)
             {
-                x = buf.value * 800 / 1024;
-                printf("x=%d\n", x);
-            }
-            if (buf.code == ABS_Y)
-            {
-                y = buf.value * 480 / 600;
-                printf("y=%d\n", y);
+                printf("更新资源\n");
+                update_file();
+                 sem_post(&input);
             }
         }
-        // 判断当前点击操作是否释放
-        if (buf.type == EV_KEY && buf.code == BTN_TOUCH)
+        if (x > 120 * 800 / 1024 && x <= 220 * 800 / 1024)
         {
-            // 处于按键或触摸状态
-            if (buf.value)
+            if (y >= 30 * 480 / 600 && y <= 100 * 480 / 600)
             {
-            }
-            else
-            {
-                if (x >= 20 * 800 / 1024 && x <= 120 * 800 / 1024)
-                {
-                    if (y >= 30 * 480 / 600 && y <= 100 * 480 / 600)
-                    {
-                        printf("更新资源\n");
-                        update_file();
-                    }
-                }
-                if (x > 120 * 800 / 1024 && x <= 220 * 800 / 1024)
-                {
-                    if (y >= 30 * 480 / 600 && y <= 100 * 480 / 600)
-                    {
-                        printf("播放器\n");
-                        img_player();
-                    }
-                }
-                if (x > 220 * 800 / 1024 && x <= 320 * 800 / 1024)
-                {
-                    if (y >= 30 * 480 / 600 && y <= 100 * 480 / 600)
-                    {
-                        printf("刮刮乐\n");
-                    }
-                }
-                if (x >= 720 * 800 / 1024 && x <= 800 * 800 / 1024)
-                {
-                    if (y >= 380 * 480 / 600 && y <= 480 * 480 / 600)
-                    {
-                        printf("退出\n");
-                        break;
-                    }
-                }
+                printf("播放器\n");
+                img_player();
             }
         }
+        if (x > 220 * 800 / 1024 && x <= 320 * 800 / 1024)
+        {
+            if (y >= 30 * 480 / 600 && y <= 100 * 480 / 600)
+            {
+                printf("刮刮乐\n");
+
+            }
+        }
+        if (x >= 720 * 800 / 1024 && x <= 800 * 800 / 1024)
+        {
+            if (y >= 380 * 480 / 600 && y <= 480 * 480 / 600)
+            {
+                printf("退出\n");
+                sem_post(&input);
+                break;
+            }
+        }
+        sem_post(&input);
     }
     return 0;
 }
@@ -641,13 +622,12 @@ int update_file()
     sleep(1);
     lcd_draw_bmp("main_menu.bmp", 0, 0);
     free(lcd);
+    formatLinkList(&head);//防止链表内存爆炸
     return 0;
 }
 int img_player()
 {
 
-    LinkList head2;
-    initLinkList(&head2);
     lcd_draw_bmp("reading_file.bmp", 0, 0);
     FILE *fp = fopen("file_list.txt", "r");
     if (fp == 0)
@@ -681,7 +661,7 @@ int img_player()
             fontUnload(f);
             destroyBitmap(bm);
             printf("9\n");
-            addLinkList(&head2, file_name);
+            addLinkList(&head, file_name);
             // ~60%
             if (x_cur <= 600)
             {
@@ -736,11 +716,11 @@ int img_player()
     }
     sleep(1);
     // 播放图片资源
-    LNode *p = head2;
-    showLinkList(head2);
-
+    LNode *p = head;
+    showLinkList(head);
     while (1)
     {
+        
         char bmp_path[100] = "/root/my_test/bmp_resource/";
         char *new_bmp_path = strtok(p->file_name, "\n");
         strcat(bmp_path, new_bmp_path);
@@ -754,19 +734,19 @@ int img_player()
 }
 void *touch_thread(void *arg)
 {
-
+    int flag = 0;
     struct input_event buf; // 触摸屏数据结构体
-    int count =1;
+    int count = 1;
     while (1)
     {
         // 读取触摸屏数据
-        read(fd_touch2, &buf, sizeof(buf));
-        if(flag == 0)
+        read(fd_touch, &buf, sizeof(buf));
+        if (flag == 0)
         {
-             sem_wait(&input); // P
-             flag = 1;
+            sem_wait(&input); // P
+            flag = 1;
         }
-        
+
         if (buf.type == EV_ABS)
         {
             // 如果事件类型为绝对位置事件，判断为触摸
@@ -782,7 +762,7 @@ void *touch_thread(void *arg)
                 printf("y=%d\n", y);
             }
         }
-       
+
         // 判断当前点击操作是否释放
         if (buf.type == EV_KEY && buf.code == BTN_TOUCH)
         {
@@ -793,7 +773,7 @@ void *touch_thread(void *arg)
             }
             else
             {
-                printf("count=%d\n",count);
+                printf("count=%d\n", count);
                 flag = 0;
                 sem_post(&output);
             }
