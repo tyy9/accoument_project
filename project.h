@@ -11,6 +11,8 @@
 #include <dirent.h>
 #include <stdlib.h>
 #include <time.h>
+#include<pthread.h>
+
 typedef struct LNode
 {
     char *file_name;
@@ -33,21 +35,25 @@ struct LcdDevice *init_lcd();
 int img_player();
 // 链表函数
 int initLinkList(LinkList *head);
-int addLinkList(LinkList head, const char *file_name);
+int addLinkList(LinkList *head, const char *file_name);
 int destroyLinkList(LinkList *head);
 int formatLinkList(LinkList *head); // 格式化链表
 void showLinkList(LinkList head);
 int addLinkListData_to_File(LinkList head);
+int isLinkListNull(LinkList head);
+//线程函数
+void *touch_thread(void *arg);
 
 int initLinkList(LinkList *head)
 {
-    *head = (LNode *)malloc(sizeof(LNode));
-    if (*head == NULL)
-    {
-        perror("链表初始化失败\n");
-        return 0;
-    }
-    (*head)->next = NULL;
+    // *head = (LNode *)malloc(sizeof(LNode));
+    // if (*head == NULL)
+    // {
+    //     perror("链表初始化失败\n");
+    //     return 0;
+    // }
+    // (*head)->next = NULL;
+    (*head) = NULL;
     printf("链表初始化成功\n");
     return 1;
 }
@@ -62,16 +68,36 @@ int inittouch_device()
     }
     return 0;
 }
-
-int addLinkList(LinkList head, const char *file_name)
+int isLinkListNull(LinkList head)
+{
+    if (head == NULL)
+    {
+        return 1;
+    }
+    return 0;
+}
+int addLinkList(LinkList *head, const char *file_name)
 {
     // 查找尾指针
-    LNode *temp = head->next, *Tail = head;
-    while (temp != NULL)
+    // LNode *temp = head->next, *Tail = head;
+    int flag = 0;
+    LNode *Tail = *head;
+    printf("1\n");
+    if (isLinkListNull(*head))
     {
-        Tail = temp;
-        temp = temp->next;
+        flag = 1;
     }
+    else
+    {
+        LNode *temp = *head;
+        while (temp->next != *head)
+        {
+            temp = temp->next;
+            Tail = temp;
+        }
+    }
+
+    printf("2\n");
     LNode *p = NULL;
     p = (LNode *)malloc(sizeof(LNode));
     if (p == NULL)
@@ -81,18 +107,38 @@ int addLinkList(LinkList head, const char *file_name)
     }
     p->file_name = malloc(sizeof(file_name));
     strcpy(p->file_name, file_name);
-    p->next = NULL;
-    Tail->next = p;
+    for (int i = 0; i < strlen(p->file_name); i++)
+    {
+        printf("%d\t", p->file_name[i]);
+    }
+    if (flag == 1)
+    {
+        printf("7\n");
+        *head = p;
+    }
+    else
+    {
+        Tail->next = p; // 此时Tail的地址没有改变，所以在首次加入时由于没有内存分配，不可使用内部的指针变量
+    }
+    printf("5\n");
+    p->next = *head;
+    (*head)->prev = p;
+    p->prev = Tail;
+    printf("6\n");
     Tail = p;
+    printf("3\n");
     return 0;
 }
 
 void showLinkList(LinkList head)
 {
+    // LNode *p = head->next;
     LNode *p = head->next;
     printf("目前链表的数据如下:\n");
-    while (p != NULL)
+    printf("file_name:%s\n", head->file_name);
+    while (p != head)
     {
+
         printf("file_name:%s\n", p->file_name);
         p = p->next;
     }
@@ -109,12 +155,36 @@ int addLinkListData_to_File(LinkList head)
         perror("文件打开失败\n");
         return 0;
     }
+    // LNode *p = head->next;
     LNode *p = head->next;
-    while (p != NULL)
+    // 先读头结点
+   // char buf1[strlen(head->file_name)];
+   // setbuf(fp, buf1);
+    printf("文件写入:%s\n", head->file_name);
+    fprintf(fp, "%s\n", head->file_name);
+    fflush(fp);
+    char buf[50];
+    memset(buf, 0, sizeof(buf));
+    strcat(buf, "更新图片播放列表文件--");
+    strcat(buf, head->file_name);
+    // 加载字体
+    font *f = fontLoad("simfang.ttf");
+    // 字体大小的设置
+    fontSetSize(f, 30);
+    bitmap *bm = createBitmapWithInit(600, 30, 4, getColor(1, 0, 0, 0));
+    fontPrint(f, bm, 0, 0, buf, getColor(0, 255, 255, 255), 0);
+    show_font_to_lcd(lcd->mp, 200, 370, bm);
+    // 卸载字体
+    fontUnload(f);
+    destroyBitmap(bm);
+    usleep(10000);
+    while (p != head)
     {
+        //char buf2[strlen(p->file_name)];
+        //setbuf(fp, buf2);
         printf("文件写入:%s\n", p->file_name);
         fprintf(fp, "%s\n", p->file_name);
-        fflush(0);
+        fflush(fp);
         char buf[50];
         memset(buf, 0, sizeof(buf));
         strcat(buf, "更新图片播放列表文件--");
@@ -135,14 +205,21 @@ int addLinkListData_to_File(LinkList head)
 }
 int formatLinkList(LinkList *head)
 {
+    // LNode *p = (*head)->next, *q = NULL;
+    if (isLinkListNull(*head))
+    {
+        return 0;
+    }
     LNode *p = (*head)->next, *q = NULL;
-    while (p != NULL)
+    while (p != *head)
     {
         q = p;
         p = p->next;
         free(q);
     }
     (*head)->next = NULL;
+    free(*head);
+    *head = NULL;
     return 0;
 }
 
@@ -513,6 +590,7 @@ int main_menu()
 
 int update_file()
 {
+
     // 每次进来先格式化链表数据
     formatLinkList(&head);
     lcd_draw_bmp("update_file.bmp", 0, 0);
@@ -559,7 +637,9 @@ int update_file()
                 fontUnload(f);
                 destroyBitmap(bm);
                 // 将数据存进链表
-                addLinkList(head, file_dir->d_name);
+                printf("4\n");
+                addLinkList(&head, file_dir->d_name);
+
                 printf("文件名:%s\n", file_dir->d_name);
                 // ~60%
                 if (x_cur <= x_limit)
@@ -606,6 +686,10 @@ int update_file()
 }
 int img_player()
 {
+    
+
+    LinkList head2;
+    initLinkList(&head2);
     lcd_draw_bmp("reading_file.bmp", 0, 0);
     FILE *fp = fopen("file_list.txt", "r");
     if (fp == 0)
@@ -623,29 +707,23 @@ int img_player()
         if (fgets(file_name, sizeof(file_name), fp))
         {
             printf("file:%s--读取", file_name);
+            printf("8\n");
             char buf[30];
             memset(buf, 0, sizeof(buf));
             strcpy(buf, file_name);
+            printf("10\n");
             // 加载字体
             font *f = fontLoad("simfang.ttf");
             // 字体大小的设置
             fontSetSize(f, 30);
-            bitmap *bm = createBitmapWithInit(500, 30, 4, getColor(1, 0, 0, 0));
-            // 将字体写到点阵图上
-            // f:操作的字库
-            // 70,0:字体在画板中的起始位置（y,x)
-            // buf:显示的内容
-            // getColor(0,100,100,100):字体颜色
-            // 默认为0
+            bitmap *bm = createBitmapWithInit(600, 30, 4, getColor(1, 0, 0, 0));
             fontPrint(f, bm, 0, 0, buf, getColor(0, 255, 255, 255), 0);
-            // 把字体框输出到LCD屏幕上
-            // lcd->mp:mmap后内存映射首地址
-            // 0,100:画板显示的起始位置(x,y)
-            // bm:画板
             show_font_to_lcd(lcd->mp, 200, 370, bm);
             // 卸载字体
             fontUnload(f);
             destroyBitmap(bm);
+            printf("9\n");
+            addLinkList(&head2, file_name);
             // ~60%
             if (x_cur <= 600)
             {
@@ -661,11 +739,25 @@ int img_player()
                 }
                 x_cur += 100;
             }
-            memset(file_name, 0, sizeof(file_name));
+            // memset(file_name, 0, sizeof(file_name));
             usleep(1000);
         }
     }
-    char buf[]="读取完毕，将自动播放图片资源\n";
+    if (isLinkListNull(head))
+    {
+        char buf[] = "列表中无法找到图片资源，无法播放\n";
+        font *f = fontLoad("simfang.ttf");
+        fontSetSize(f, 30);
+        bitmap *bm = createBitmapWithInit(500, 30, 4, getColor(1, 0, 0, 0));
+        fontPrint(f, bm, 0, 0, buf, getColor(0, 255, 255, 255), 0);
+        show_font_to_lcd(lcd->mp, 200, 370, bm);
+        fontUnload(f);
+        destroyBitmap(bm);
+        sleep(2);
+        lcd_draw_bmp("main_menu.bmp", 0, 0);
+        return 0;
+    }
+    char buf[] = "读取完毕，将自动播放图片资源\n";
     // 加载字体
     font *f = fontLoad("simfang.ttf");
     // 字体大小的设置
@@ -685,6 +777,61 @@ int img_player()
         }
     }
     sleep(1);
-    //lcd_draw_bmp("main_menu.bmp", 0, 0);
+    // 播放图片资源
+    LNode *p = head2;
+    showLinkList(head2);
+   
+    while (1)
+    {
+        char bmp_path[100] = "/root/my_test/bmp_resource/";
+        char *new_bmp_path=strtok(p->file_name,"\n");
+        strcat(bmp_path, new_bmp_path);
+        lcd_draw_bmp(bmp_path, 0, 0);
+        p = p->next;
+        sleep(1);
+    }
+   
+    // lcd_draw_bmp("main_menu.bmp", 0, 0);
     return 0;
+}
+void *touch_thread(void *arg){
+     unsigned int x,y;
+    struct input_event buf;//触摸屏数据结构体
+    while(1){
+        //读取触摸屏数据
+        read(fd_touch,&buf,sizeof(buf));
+        if(buf.type==EV_ABS){
+            //如果事件类型为绝对位置事件，判断为触摸
+            //第一次返回X值，第二次返回Y值
+            if(buf.code==ABS_X){
+                x=buf.value*800/1024;
+                printf("x=%d\n",x);
+            }
+            if(buf.code==ABS_Y){
+                y=buf.value*480/600;
+                printf("y=%d\n",y);
+            }
+        }
+        //判断当前点击操作是否释放
+        if(buf.type==EV_KEY&&buf.code==BTN_TOUCH){
+            //处于按键或触摸状态
+            if(buf.value){
+                if(x>400){
+                    printf("触摸了左边\n");
+                }
+                if(x<400){
+                    printf("触摸了右边\n");
+                }
+            }else{
+                if(x>400){
+                    printf("释放了左边\n");
+                    lcd_draw_bmp("robot_1.bmp",0,0);
+                }
+                if(x<400){
+                    printf("释放了右边\n");
+                    lcd_draw_bmp("robot_2.bmp",0,0);
+                }
+            }
+        }
+    }
 }
