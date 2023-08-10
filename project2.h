@@ -24,12 +24,10 @@ typedef struct LNode
 int fd_touch;
 struct input_event buf;
 unsigned int x, y;
-unsigned int x2,y2;
+unsigned int x_press, y_press;
 LinkList head;
 LNode *Tail;         // 尾插
 sem_t input, output; // I/O信号量
-
-
 
 // 函数声明
 int inittouch_device();
@@ -444,7 +442,7 @@ int lock_menu()
                     sem_post(&input);
                     main_menu();
                     // lcd_draw_bmp("01.bmp", 0, 0);
-                    //lcd_draw_bmp("main_menu.bmp", 0, 0);
+                    // lcd_draw_bmp("main_menu.bmp", 0, 0);
                     break;
                 }
                 else
@@ -484,10 +482,10 @@ int main_menu()
     struct input_event buf; // 触摸屏数据结构体
     while (1)
     {
-       
+
         // 读取触摸屏数据
         sem_wait(&output);
-         printf("main-x:%d,y:%d\n", x, y);
+        printf("main-x:%d,y:%d\n", x, y);
         // 处于按键或触摸状态
         if (x >= 20 * 800 / 1024 && x <= 120 * 800 / 1024)
         {
@@ -495,7 +493,7 @@ int main_menu()
             {
                 printf("更新资源\n");
                 update_file();
-                 sem_post(&input);
+                sem_post(&input);
             }
         }
         if (x > 120 * 800 / 1024 && x <= 220 * 800 / 1024)
@@ -503,6 +501,7 @@ int main_menu()
             if (y >= 30 * 480 / 600 && y <= 100 * 480 / 600)
             {
                 printf("播放器\n");
+                sem_post(&input);
                 img_player();
             }
         }
@@ -511,7 +510,6 @@ int main_menu()
             if (y >= 30 * 480 / 600 && y <= 100 * 480 / 600)
             {
                 printf("刮刮乐\n");
-
             }
         }
         if (x >= 720 * 800 / 1024 && x <= 800 * 800 / 1024)
@@ -622,7 +620,7 @@ int update_file()
     sleep(1);
     lcd_draw_bmp("main_menu.bmp", 0, 0);
     free(lcd);
-    formatLinkList(&head);//防止链表内存爆炸
+    formatLinkList(&head); // 防止链表内存爆炸
     return 0;
 }
 int img_player()
@@ -718,9 +716,20 @@ int img_player()
     // 播放图片资源
     LNode *p = head;
     showLinkList(head);
+    sem_post(&output);
     while (1)
     {
-        
+        sem_wait(&output);//0
+        // 上滑解锁
+        if (y_press - y > 100 &&y_press > y)
+        {
+
+            printf("解锁\n");
+            sem_post(&input);
+            lock_menu();
+            break;
+        }
+        sem_post(&output);
         char bmp_path[100] = "/root/my_test/bmp_resource/";
         char *new_bmp_path = strtok(p->file_name, "\n");
         strcat(bmp_path, new_bmp_path);
@@ -769,7 +778,10 @@ void *touch_thread(void *arg)
             // 处于按键或触摸状态
             if (buf.value)
             {
-
+                x_press = x;
+                y_press = y;
+                printf("x_press=%d\n",x_press);
+                printf("y_press=%d\n",y_press);
             }
             else
             {

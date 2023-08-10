@@ -18,7 +18,7 @@ int main()
     initLinkList(&head); // 创建无头循环链表
     while (1)
     {
-        lock_menu();
+        lock_menu();//主线程比子线程的调度优先度要高
     }
     lcd_close();
     close(fd_touch);
