@@ -10,11 +10,12 @@
 #include "font.h"
 #include <dirent.h>
 #include <stdlib.h>
-#include<time.h>
+#include <time.h>
 typedef struct LNode
 {
     char *file_name;
     struct LNode *next;
+    struct LNode *prev;
 } LNode, *LinkList;
 
 // 全局变量
@@ -28,7 +29,8 @@ int inittouch_device();
 int lock_menu();
 int main_menu();
 int update_file();
-struct LcdDevice *init_lcd(const char *device);
+struct LcdDevice *init_lcd();
+int img_player();
 // 链表函数
 int initLinkList(LinkList *head);
 int addLinkList(LinkList head, const char *file_name);
@@ -128,11 +130,23 @@ int addLinkListData_to_File(LinkList head)
         fontUnload(f);
         destroyBitmap(bm);
         p = p->next;
-        sleep(1);
+        usleep(10000);
     }
 }
+int formatLinkList(LinkList *head)
+{
+    LNode *p = (*head)->next, *q = NULL;
+    while (p != NULL)
+    {
+        q = p;
+        p = p->next;
+        free(q);
+    }
+    (*head)->next = NULL;
+    return 0;
+}
 
-struct LcdDevice *init_lcd(const char *device)
+struct LcdDevice *init_lcd()
 {
     // 申请空间
     struct LcdDevice *lcd = malloc(sizeof(struct LcdDevice));
@@ -142,14 +156,7 @@ struct LcdDevice *init_lcd(const char *device)
     }
 
     // 打开LCD设备
-    lcd->fd = open(device, O_RDWR);
-    if (lcd->fd < 0)
-    {
-        perror("open lcd fail");
-        free(lcd);
-        return NULL;
-    }
-
+    lcd->fd = fd_lcd;
     // 映射
     lcd->mp = mmap(NULL, 800 * 480 * 4, PROT_READ | PROT_WRITE, MAP_SHARED, lcd->fd, 0);
 
@@ -167,7 +174,7 @@ int lock_menu()
     struct input_event buf; // 触摸屏数据结构体
                             // 定义字体
     // 初始化Lcd
-    struct LcdDevice *lcd = init_lcd("/dev/fb0");
+    struct LcdDevice *lcd = init_lcd();
 
     // 加载字体
     font *f = fontLoad("simfang.ttf");
@@ -385,6 +392,7 @@ int lock_menu()
                             // 卸载字体
                             fontUnload(f);
                             destroyBitmap(bm);
+                            free(lcd);
                             sleep(3);
                             main_menu();
                             // lcd_draw_bmp("01.bmp", 0, 0);
@@ -422,13 +430,6 @@ int lock_menu()
                             }
                             sleep(3);
                             // 自动清除提示
-                            for (int y = 120; y <= 290; y++)
-                            {
-                                for (int x = 20; x <= 200; x++)
-                                {
-                                    lcd_draw_point(x, y, 0X00000000);
-                                }
-                            }
                             destroyBitmap(bm);
                         }
                     }
@@ -486,6 +487,7 @@ int main_menu()
                     if (y >= 30 * 480 / 600 && y <= 100 * 480 / 600)
                     {
                         printf("播放器\n");
+                        img_player();
                     }
                 }
                 if (x > 220 * 800 / 1024 && x <= 320 * 800 / 1024)
@@ -511,13 +513,15 @@ int main_menu()
 
 int update_file()
 {
+    // 每次进来先格式化链表数据
+    formatLinkList(&head);
     lcd_draw_bmp("update_file.bmp", 0, 0);
     DIR *dirp = opendir("/root/my_test/bmp_resource/");
     // 初始化Lcd
-    struct LcdDevice *lcd = init_lcd("/dev/fb0");
+    struct LcdDevice *lcd = init_lcd();
     char cur_dir[] = ".";          // 当前目录
     char up_dir[] = "..";          // 上级目录
-    int x_limit = 456, x_cur = 20; // 进度条的限制
+    int x_limit = 600, x_cur = 20; // 进度条的限制
     if (dirp == NULL)
     {
         perror("目录打开失败\n");
@@ -560,15 +564,17 @@ int update_file()
                 // ~60%
                 if (x_cur <= x_limit)
                 {
-                    int x=x_cur,y=400;
-                    while(x<=x_cur+50){
-                        for(int y=400;y<=440;y++){
-                            lcd_draw_point(x,y,0X00FFFFFF);
+                    int x = x_cur, y = 400;
+                    while (x <= x_cur + 100)
+                    {
+                        for (int y = 400; y <= 440; y++)
+                        {
+                            lcd_draw_point(x, y, 0X00FFFFFF);
                         }
                         x++;
                         usleep(1000);
                     }
-                    x_cur+=50;
+                    x_cur += 100;
                 }
             }
         }
@@ -579,7 +585,7 @@ int update_file()
             break;
         }
 
-        sleep(1);
+        usleep(1000);
     }
     printf("end\n");
     closedir(dirp);
@@ -595,5 +601,90 @@ int update_file()
     }
     sleep(1);
     lcd_draw_bmp("main_menu.bmp", 0, 0);
+    free(lcd);
+    return 0;
+}
+int img_player()
+{
+    lcd_draw_bmp("reading_file.bmp", 0, 0);
+    FILE *fp = fopen("file_list.txt", "r");
+    if (fp == 0)
+    {
+        perror("文件打开失败\n");
+        return 0;
+    }
+    // 初始化Lcd
+    struct LcdDevice *lcd = init_lcd();
+    int x_limit = 600, x_cur = 20; // 进度条的限制
+    char file_name[30];
+    memset(file_name, 0, sizeof(file_name));
+    while (!feof(fp))
+    {
+        if (fgets(file_name, sizeof(file_name), fp))
+        {
+            printf("file:%s--读取", file_name);
+            char buf[30];
+            memset(buf, 0, sizeof(buf));
+            strcpy(buf, file_name);
+            // 加载字体
+            font *f = fontLoad("simfang.ttf");
+            // 字体大小的设置
+            fontSetSize(f, 30);
+            bitmap *bm = createBitmapWithInit(500, 30, 4, getColor(1, 0, 0, 0));
+            // 将字体写到点阵图上
+            // f:操作的字库
+            // 70,0:字体在画板中的起始位置（y,x)
+            // buf:显示的内容
+            // getColor(0,100,100,100):字体颜色
+            // 默认为0
+            fontPrint(f, bm, 0, 0, buf, getColor(0, 255, 255, 255), 0);
+            // 把字体框输出到LCD屏幕上
+            // lcd->mp:mmap后内存映射首地址
+            // 0,100:画板显示的起始位置(x,y)
+            // bm:画板
+            show_font_to_lcd(lcd->mp, 200, 370, bm);
+            // 卸载字体
+            fontUnload(f);
+            destroyBitmap(bm);
+            // ~60%
+            if (x_cur <= 600)
+            {
+                int x = x_cur, y = 400;
+                while (x <= x_cur + 100)
+                {
+                    for (int y = 400; y <= 440; y++)
+                    {
+                        lcd_draw_point(x, y, 0X00FFFFFF);
+                    }
+                    x++;
+                    usleep(1000);
+                }
+                x_cur += 100;
+            }
+            memset(file_name, 0, sizeof(file_name));
+            usleep(1000);
+        }
+    }
+    char buf[]="读取完毕，将自动播放图片资源\n";
+    // 加载字体
+    font *f = fontLoad("simfang.ttf");
+    // 字体大小的设置
+    fontSetSize(f, 30);
+    bitmap *bm = createBitmapWithInit(500, 30, 4, getColor(1, 0, 0, 0));
+    fontPrint(f, bm, 0, 0, buf, getColor(0, 255, 255, 255), 0);
+    show_font_to_lcd(lcd->mp, 200, 370, bm);
+    // 卸载字体
+    fontUnload(f);
+    destroyBitmap(bm);
+    sleep(1);
+    for (int y = 400; y <= 440; y++)
+    {
+        for (int x = x_cur; x <= 780; x++)
+        {
+            lcd_draw_point(x, y, 0x00FFFFFF);
+        }
+    }
+    sleep(1);
+    //lcd_draw_bmp("main_menu.bmp", 0, 0);
     return 0;
 }

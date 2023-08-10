@@ -8,7 +8,7 @@ int main(){
         return 0;
     }
     lcd_open();
-    initLinkList(&head);
+    initLinkList(&head);//创建无头循环链表
     while(1){
     lock_menu();
     }
