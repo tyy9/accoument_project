@@ -13,6 +13,7 @@
 #include <time.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include <math.h>
 typedef struct LNode
 {
     char *file_name;
@@ -21,21 +22,23 @@ typedef struct LNode
 } LNode, *LinkList;
 
 // 全局变量
-int fd_touch;
+int fd_touch,fd_touch2;
 struct input_event buf;
 unsigned int x, y;
 unsigned int x_press, y_press;
 LinkList head;
 LNode *Tail;         // 尾插
 sem_t input, output; // I/O信号量
-
+int stop_account_flag = 0, account_end_flag = 0;
 // 函数声明
-int inittouch_device();
+int inittouch_device(int *fd);
 int lock_menu();
 int main_menu();
 int update_file();
 struct LcdDevice *init_lcd();
 int img_player();
+int Draw();
+void draw_cricle(int a, int b, int r, unsigned int color);
 // 链表函数
 int initLinkList(LinkList *head);
 int addLinkList(LinkList *head, const char *file_name);
@@ -46,7 +49,7 @@ int addLinkListData_to_File(LinkList head);
 int isLinkListNull(LinkList head);
 // 线程函数
 void *touch_thread(void *arg);
-
+void *account_thread(void *arg);
 int initLinkList(LinkList *head)
 {
     // *head = (LNode *)malloc(sizeof(LNode));
@@ -61,10 +64,10 @@ int initLinkList(LinkList *head)
     return 1;
 }
 
-int inittouch_device()
+int inittouch_device(int *fd)
 {
-    fd_touch = open("/dev/input/event0", O_RDONLY);
-    if (fd_touch < 0)
+    *fd = open("/dev/input/event0", O_RDONLY);
+    if (fd < 0)
     {
         perror("触摸屏打开失败\n");
         return -1;
@@ -108,7 +111,8 @@ int addLinkList(LinkList *head, const char *file_name)
         perror("新节点分配空间失败\n");
         return 0;
     }
-    p->file_name = malloc(sizeof(file_name));
+    printf("list add file:%s,size:%d", file_name, sizeof(file_name));
+    p->file_name = malloc(strlen(file_name) + 1);
     strcpy(p->file_name, file_name);
     for (int i = 0; i < strlen(p->file_name); i++)
     {
@@ -149,8 +153,10 @@ void showLinkList(LinkList head)
 
 int addLinkListData_to_File(LinkList head)
 {
-    FILE *fp = fopen("/root/my_test/file_list.txt", "w+");
+    printf("11\n");
+    FILE *fp = fopen("file_list.txt", "w+");
     // 初始化Lcd
+    printf("12\n");
     struct LcdDevice *lcd = init_lcd("/dev/fb0");
     // 文件自动创建，每次写前都将清空
     if (fp == NULL)
@@ -158,6 +164,7 @@ int addLinkListData_to_File(LinkList head)
         perror("文件打开失败\n");
         return 0;
     }
+    printf("13\n");
     // LNode *p = head->next;
     LNode *p = head->next;
     // 先读头结点
@@ -218,6 +225,8 @@ int formatLinkList(LinkList *head)
     {
         q = p;
         p = p->next;
+        q->next = NULL;
+        free(q->file_name);
         free(q);
     }
     (*head)->next = NULL;
@@ -510,6 +519,8 @@ int main_menu()
             if (y >= 30 * 480 / 600 && y <= 100 * 480 / 600)
             {
                 printf("刮刮乐\n");
+                sem_post(&input);
+                Draw();
             }
         }
         if (x >= 720 * 800 / 1024 && x <= 800 * 800 / 1024)
@@ -576,7 +587,7 @@ int update_file()
                 destroyBitmap(bm);
                 // 将数据存进链表
                 printf("4\n");
-                addLinkList(&head, file_dir->d_name);
+                addLinkList(&head, buf);
 
                 printf("文件名:%s\n", file_dir->d_name);
                 // ~60%
@@ -608,6 +619,7 @@ int update_file()
     printf("end\n");
     closedir(dirp);
     // 将数据写进文件
+    printf("goto\n");
     addLinkListData_to_File(head);
     // 40%
     for (int y = 400; y <= 440; y++)
@@ -717,28 +729,68 @@ int img_player()
     LNode *p = head;
     showLinkList(head);
     sem_post(&output);
+    pthread_t account;
+    pthread_create(&account, NULL, account_thread, NULL);
     while (1)
     {
-        sem_wait(&output);//0
+        stop_account_flag = 0;
+        sem_wait(&output); // 0
         // 上滑解锁
-        if (y_press - y > 100 &&y_press > y)
+        if (y_press - y > 100 && y_press > y)
         {
-
+            stop_account_flag = 1;
             printf("解锁\n");
-            sem_post(&input);
-            lock_menu();
-            break;
+
+            if (account_end_flag == 1)
+            {
+                sem_post(&input);
+                lock_menu();
+                break;
+            }
         }
         sem_post(&output);
         char bmp_path[100] = "/root/my_test/bmp_resource/";
         char *new_bmp_path = strtok(p->file_name, "\n");
         strcat(bmp_path, new_bmp_path);
-        lcd_draw_bmp(bmp_path, 0, 0);
+        lcd_draw_bmp_swiper(bmp_path, 0, 0);
         p = p->next;
-        sleep(1);
+        sleep(3);
     }
-
+    formatLinkList(&head);
     // lcd_draw_bmp("main_menu.bmp", 0, 0);
+    return 0;
+}
+void draw_cricle(int a, int b, int r, unsigned int color)
+{
+    // 上半
+    for (int x = a - r; x <= a + r; x++)
+    {
+        for (int y = b - sqrt(pow(r, 2) - pow(x - a, 2)); y <= b; y++)
+        {
+            *(pb + y * 800 + x) = color;
+        }
+    }
+    // 下半
+    for (int x = a - r; x <= a + r; x++)
+    {
+        for (int y = b; y <= b + sqrt(pow(r, 2) - pow(x - a, 2)); y++)
+        {
+            *(pb + y * 800 + x) = color;
+        }
+    }
+}
+int Draw()
+{
+    // 阻塞触摸屏线程
+    sem_wait(&input);
+    // 使用该线程自己的触摸屏
+    inittouch_device(&fd_touch2);
+    lcd_draw_bmp("d1.bmp", 0, 0);
+    int draw_x,draw_y;
+    struct input_event buf; // 触摸屏数据结构体
+    int count=1;
+    draw_cricle(400,240,120,0X00FFFFFF);
+    sem_post(&input);
     return 0;
 }
 void *touch_thread(void *arg)
@@ -780,8 +832,8 @@ void *touch_thread(void *arg)
             {
                 x_press = x;
                 y_press = y;
-                printf("x_press=%d\n",x_press);
-                printf("y_press=%d\n",y_press);
+                printf("x_press=%d\n", x_press);
+                printf("y_press=%d\n", y_press);
             }
             else
             {
@@ -791,5 +843,39 @@ void *touch_thread(void *arg)
             }
         }
         count++;
+    }
+}
+void *account_thread(void *arg)
+{
+    // 初始化Lcd
+    struct LcdDevice *lcd = init_lcd();
+
+    while (1)
+    {
+
+        // lcd_draw_bmp("account.bmp", 0, 0);
+
+        for (int i = 800; i >= 25; i--)
+        {
+            account_end_flag = 0;
+            lcd_draw_bmp("account_icon.bmp", 0, 0);
+            char buf[] = "你好，我是秦始皇,v我50,等我复活封你做王爷!!";
+            // 加载字体
+            font *f = fontLoad("simfang.ttf");
+            // 字体大小的设置
+            fontSetSize(f, 30);
+            bitmap *bm = createBitmapWithInit(775, 30, 4, getColor(0, 180, 238, 255));
+            fontPrint(f, bm, -25 + i, 0, buf, getColor(0, 255, 255, 255), 0);
+            show_font_to_lcd(lcd->mp, 25, 0, bm);
+            // 卸载字体
+            fontUnload(f);
+            destroyBitmap(bm);
+            if (stop_account_flag == 1)
+            {
+                account_end_flag = 1;
+                pthread_exit(NULL);
+            }
+            usleep(100);
+        }
     }
 }
