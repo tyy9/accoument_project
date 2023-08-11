@@ -14,6 +14,8 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <math.h>
+#include <linux/fb.h>
+#include <sys/ioctl.h>
 typedef struct LNode
 {
     char *file_name;
@@ -22,7 +24,7 @@ typedef struct LNode
 } LNode, *LinkList;
 
 // 全局变量
-int fd_touch,fd_touch2;
+int fd_touch, fd_touch2;
 struct input_event buf;
 unsigned int x, y;
 unsigned int x_press, y_press;
@@ -785,19 +787,92 @@ int Draw()
     sem_wait(&input);
     // 使用该线程自己的触摸屏
     inittouch_device(&fd_touch2);
-    lcd_draw_bmp("d1.bmp", 0, 0);
-    int draw_x,draw_y;
+    lcd_draw_bmp("draw.bmp", 0, 0);
+    int draw_x, draw_y;
     struct input_event buf; // 触摸屏数据结构体
-    int count=1;
-    draw_cricle(400,240,120,0X00FFFFFF);
+    int count = 1, draw_count = 0;
+    int num = rand() % 10+1;//1-10随机数
+    while (1)
+    {
+        if (count > 5)
+        {
+            count = 1;
+        }
+        // 读取触摸屏数据
+        read(fd_touch2, &buf, sizeof(buf));
+        if (buf.type == EV_ABS)
+        {
+            // 如果事件类型为绝对位置事件，判断为触摸
+            // 第一次返回X值，第二次返回Y值
+            if (buf.code == ABS_X)
+            {
+                draw_x = buf.value * 800 / 1024;
+                printf("draw_x=%d\n", draw_x);
+            }
+            if (buf.code == ABS_Y)
+            {
+                draw_y = buf.value * 480 / 600;
+                printf("draw_y=%d\n", draw_y);
+            }
+        }
+        if (count == 2)
+        {
+            int cur_x = draw_x * 1024 / 800, cur_y = draw_y * 600 / 480;
+            // 需要换算，因为画圆函数是以lcd的内存地址为准
+
+            // 防止越界，边界-半径
+            if (cur_x >= 100 && cur_x <= 715)
+            {
+                if (cur_y >= 255 && cur_y <= 440)
+                {
+                    printf("cur_x:%d,cur_y=%d,draw_count:%d\n", cur_x, cur_y, draw_count);
+                    draw_cricle(cur_x, cur_y, 20, 0X00FFFFFF);
+                    draw_count++;
+                    if (draw_count ==100)
+                    {
+                        printf("num:%d\n",num);
+                        if(num%10==1){
+                        lcd_draw_bmp("bouns1.bmp", 0, 0);
+                        }
+                        else if(num%10>1&&num%10<=3){
+                            lcd_draw_bmp("bouns2.bmp", 0, 0);
+                        }
+                        else if(num%10>3&&num%10<=7){
+                            lcd_draw_bmp("bouns3.bmp", 0, 0);
+                        }
+                        else if(num%10>7&&num%10<=9||num%10==0){
+                            lcd_draw_bmp("bouns4.bmp", 0, 0);
+                        }
+                        sleep(4);
+                        break;
+                    }
+                    count = 1;
+                    continue;
+                }
+            }
+        }
+        // 判断当前点击操作是否释放
+        if (buf.type == EV_KEY && buf.code == BTN_TOUCH)
+        {
+            // 处于按键或触摸状态
+            if (buf.value)
+            {
+            }
+            else
+            {
+            }
+        }
+        count++;
+    }
     sem_post(&input);
+    close(fd_touch2);
+    lcd_draw_bmp("main_menu.bmp",0,0);
     return 0;
 }
 void *touch_thread(void *arg)
 {
     int flag = 0;
     struct input_event buf; // 触摸屏数据结构体
-    int count = 1;
     while (1)
     {
         // 读取触摸屏数据
@@ -837,12 +912,10 @@ void *touch_thread(void *arg)
             }
             else
             {
-                printf("count=%d\n", count);
                 flag = 0;
                 sem_post(&output);
             }
         }
-        count++;
     }
 }
 void *account_thread(void *arg)
@@ -865,7 +938,7 @@ void *account_thread(void *arg)
             // 字体大小的设置
             fontSetSize(f, 30);
             bitmap *bm = createBitmapWithInit(775, 30, 4, getColor(0, 180, 238, 255));
-            fontPrint(f, bm, -25 + i, 0, buf, getColor(0, 255, 255, 255), 0);
+            fontPrint(f, bm, -25 + i, 0, buf, getColor(0, 0, 0, 255), 0);
             show_font_to_lcd(lcd->mp, 25, 0, bm);
             // 卸载字体
             fontUnload(f);

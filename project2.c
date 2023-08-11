@@ -15,7 +15,6 @@ int main()
     inittouch_device(&fd_touch);
     pthread_t touch;
     pthread_create(&touch,NULL, touch_thread, NULL);
-
     initLinkList(&head); // 创建无头循环链表
     while (1)
     {
