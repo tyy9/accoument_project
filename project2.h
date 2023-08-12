@@ -32,6 +32,7 @@ LinkList head;
 LNode *Tail;         // 尾插
 sem_t input, output; // I/O信号量
 int stop_account_flag = 0, account_end_flag = 0;
+int exit_flag = 0;
 // 函数声明
 int inittouch_device(int *fd);
 int lock_menu();
@@ -275,6 +276,7 @@ int lock_menu()
 
     while (1)
     {
+
         sem_wait(&output);
         printf("lock-x:%d,y:%d\n", x, y);
         // read(fd_touch2, &buf, sizeof(buf));
@@ -451,8 +453,12 @@ int lock_menu()
                     destroyBitmap(bm);
                     free(lcd);
                     sleep(3);
-                    sem_post(&input);
+                    // sem_post(&input);//阻塞触屏线程，主界面使用自己的触屏
                     main_menu();
+                    if (exit_flag)
+                    {
+                        return 1;
+                    }
                     // lcd_draw_bmp("01.bmp", 0, 0);
                     // lcd_draw_bmp("main_menu.bmp", 0, 0);
                     break;
@@ -488,8 +494,9 @@ int lock_menu()
     return 1;
 }
 
-int slide_lock_menu(){
-     //lcd_draw_bmp("my_lock.bmp", 0, 0);
+int slide_lock_menu()
+{
+    // lcd_draw_bmp("my_lock.bmp", 0, 0);
     char pw[7];
     memset(pw, 0, sizeof(pw));
     int index = 0;
@@ -683,10 +690,10 @@ int slide_lock_menu(){
                     destroyBitmap(bm);
                     free(lcd);
                     sleep(3);
-                    sem_post(&input);
-                   //main_menu();
-                    // lcd_draw_bmp("01.bmp", 0, 0);
-                    // lcd_draw_bmp("main_menu.bmp", 0, 0);
+                    // sem_post(&input);
+                    //  main_menu();
+                    //   lcd_draw_bmp("01.bmp", 0, 0);
+                    //   lcd_draw_bmp("main_menu.bmp", 0, 0);
                     break;
                 }
                 else
@@ -723,51 +730,112 @@ int main_menu()
 {
     lcd_draw_bmp("main_menu.bmp", 0, 0);
     struct input_event buf; // 触摸屏数据结构体
+    int main_x, main_y;
+    int slide_flag = 0;
+    int count = 1;
     while (1)
     {
-
+        if (count > 5)
+        {
+            count = 1;
+        }
+        printf("count=%d\n", count);
         // 读取触摸屏数据
-        sem_wait(&output);
-        printf("main-x:%d,y:%d\n", x, y);
+        read(fd_touch, &buf, sizeof(buf));
+        if (buf.type == EV_ABS)
+        {
+            // 如果事件类型为绝对位置事件，判断为触摸
+            // 第一次返回X值，第二次返回Y值
+            if (buf.code == ABS_X)
+            {
+                main_x = buf.value * 800 / 1024;
+                printf("main_x=%d\n", main_x);
+            }
+            if (buf.code == ABS_Y)
+            {
+                main_y = buf.value * 480 / 600;
+                printf("main_y=%d\n", main_y);
+            }
+        }
+        // 读取触摸屏数据
+        // sem_wait(&output);
+        printf("main-x:%d,y:%d\n", main_x, main_y);
+        if (count == 2)
+        {
+            if (slide_flag == 1 && main_y * 1024 / 800 <= 480)
+            {
+                lcd_draw_bmp_lock("my_lock.bmp", 0, 0, main_y * 1024 / 800);
+                printf("lcd_x=%d\n", main_y * 1024 / 800);
+            }
+        }
         // 处于按键或触摸状态
-        if (x >= 20 * 800 / 1024 && x <= 120 * 800 / 1024)
+        if (buf.type == EV_KEY && buf.code == BTN_TOUCH)
         {
-            if (y >= 30 * 480 / 600 && y <= 100 * 480 / 600)
+            if (buf.value)
             {
-                printf("更新资源\n");
-                update_file();
-                sem_post(&input);
+                int main_y_press = main_y;
+                int main_x_press = main_x;
+                if (main_y_press <= 30 * 1024 / 800)
+                {
+                    printf("main_y_press=%d\n", main_y_press);
+                    slide_flag = 1;
+                }
+            }
+            else
+            {
+                if (slide_flag == 1)
+                {
+                    if (main_y >= 50 * 800 / 1024)
+                    {
+                        slide_flag = 0;
+                        lcd_draw_bmp("my_lock.bmp", 0, 0);
+                        sem_post(&input);
+                        slide_lock_menu();
+                        lcd_draw_bmp("main_menu.bmp", 0, 0);
+                    }
+                }
+                if (main_x >= 20 * 800 / 1024 && main_x <= 120 * 800 / 1024)
+                {
+                    if (main_y >= 30 * 480 / 600 && main_y <= 100 * 480 / 600)
+                    {
+                        printf("更新资源\n");
+                        update_file();
+                        // sem_post(&input);
+                    }
+                }
+                if (main_x > 120 * 800 / 1024 && main_x <= 220 * 800 / 1024)
+                {
+                    if (main_y >= 30 * 480 / 600 && main_y <= 100 * 480 / 600)
+                    {
+                        printf("播放器\n");
+                        sem_post(&input); // 唤醒触屏子线程
+                        img_player();
+                    }
+                }
+                if (main_x > 220 * 800 / 1024 && main_x <= 320 * 800 / 1024)
+                {
+                    if (main_y >= 30 * 480 / 600 && main_y <= 100 * 480 / 600)
+                    {
+                        printf("刮刮乐\n");
+                        // sem_post(&input);
+                        Draw();
+                    }
+                }
+                if (main_x >= 720 * 800 / 1024 && main_x <= 800 * 800 / 1024)
+                {
+                    if (main_y >= 380 * 480 / 600 && main_y <= 480 * 480 / 600)
+                    {
+                        printf("退出\n");
+                        exit_flag = 1;
+                        // sem_post(&input);
+                        break;
+                    }
+                }
             }
         }
-        if (x > 120 * 800 / 1024 && x <= 220 * 800 / 1024)
-        {
-            if (y >= 30 * 480 / 600 && y <= 100 * 480 / 600)
-            {
-                printf("播放器\n");
-                sem_post(&input);
-                img_player();
-            }
-        }
-        if (x > 220 * 800 / 1024 && x <= 320 * 800 / 1024)
-        {
-            if (y >= 30 * 480 / 600 && y <= 100 * 480 / 600)
-            {
-                printf("刮刮乐\n");
-                sem_post(&input);
-                Draw();
-            }
-        }
-        if (x >= 720 * 800 / 1024 && x <= 800 * 800 / 1024)
-        {
-            if (y >= 380 * 480 / 600 && y <= 480 * 480 / 600)
-            {
-                printf("退出\n");
-                sem_post(&input);
-                break;
-            }
-        }
-        sem_post(&input);
+        count++;
     }
+    sem_post(&input);
     return 0;
 }
 
@@ -974,11 +1042,11 @@ int img_player()
         {
             stop_account_flag = 1;
             printf("解锁\n");
-            sleep(1);
+            sleep(1); // 等待字体线程反应
             if (account_end_flag == 1)
             {
                 sem_post(&input);
-                lcd_draw_bmp("my_lock.bmp",0,0);
+                lcd_draw_bmp("my_lock.bmp", 0, 0);
                 lock_menu();
                 break;
             }
@@ -1017,14 +1085,14 @@ void draw_cricle(int a, int b, int r, unsigned int color)
 int Draw()
 {
     // 阻塞触摸屏线程
-    sem_wait(&input);
+    // sem_wait(&output);
     // 使用该线程自己的触摸屏
     inittouch_device(&fd_touch2);
     lcd_draw_bmp("draw.bmp", 0, 0);
     int draw_x, draw_y;
     struct input_event buf; // 触摸屏数据结构体
     int count = 1, draw_count = 0;
-    int num = rand() % 10+1;//1-10随机数
+    int num = rand() % 10 + 1; // 1-10随机数
     while (1)
     {
         if (count > 5)
@@ -1061,19 +1129,23 @@ int Draw()
                     printf("cur_x:%d,cur_y=%d,draw_count:%d\n", cur_x, cur_y, draw_count);
                     draw_cricle(cur_x, cur_y, 20, 0X00FFFFFF);
                     draw_count++;
-                    if (draw_count ==100)
+                    if (draw_count == 100)
                     {
-                        printf("num:%d\n",num);
-                        if(num%10==1){
-                        lcd_draw_bmp("bouns1.bmp", 0, 0);
+                        printf("num:%d\n", num);
+                        if (num % 10 == 1)
+                        {
+                            lcd_draw_bmp("bouns1.bmp", 0, 0);
                         }
-                        else if(num%10>1&&num%10<=3){
+                        else if (num % 10 > 1 && num % 10 <= 3)
+                        {
                             lcd_draw_bmp("bouns2.bmp", 0, 0);
                         }
-                        else if(num%10>3&&num%10<=7){
+                        else if (num % 10 > 3 && num % 10 <= 7)
+                        {
                             lcd_draw_bmp("bouns3.bmp", 0, 0);
                         }
-                        else if(num%10>7&&num%10<=9||num%10==0){
+                        else if (num % 10 > 7 && num % 10 <= 9 || num % 10 == 0)
+                        {
                             lcd_draw_bmp("bouns4.bmp", 0, 0);
                         }
                         sleep(4);
@@ -1099,7 +1171,7 @@ int Draw()
     }
     sem_post(&input);
     close(fd_touch2);
-    lcd_draw_bmp("main_menu.bmp",0,0);
+    lcd_draw_bmp("main_menu.bmp", 0, 0);
     return 0;
 }
 void *touch_thread(void *arg)
@@ -1108,6 +1180,10 @@ void *touch_thread(void *arg)
     struct input_event buf; // 触摸屏数据结构体
     while (1)
     {
+        if(exit_flag){
+            pthread_exit(NULL);
+        }
+
         // 读取触摸屏数据
         read(fd_touch, &buf, sizeof(buf));
         if (flag == 0)
