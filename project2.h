@@ -35,6 +35,7 @@ int stop_account_flag = 0, account_end_flag = 0;
 // 函数声明
 int inittouch_device(int *fd);
 int lock_menu();
+int slide_lock_menu();
 int main_menu();
 int update_file();
 struct LcdDevice *init_lcd();
@@ -487,6 +488,237 @@ int lock_menu()
     return 1;
 }
 
+int slide_lock_menu(){
+     //lcd_draw_bmp("my_lock.bmp", 0, 0);
+    char pw[7];
+    memset(pw, 0, sizeof(pw));
+    int index = 0;
+    int password_index = 0;
+    struct input_event buf; // 触摸屏数据结构体
+                            // 定义字体
+    // 初始化Lcd
+    struct LcdDevice *lcd = init_lcd();
+
+    // 加载字体
+    font *f = fontLoad("simfang.ttf");
+
+    // 字体大小的设置
+    fontSetSize(f, 30);
+
+    while (1)
+    {
+        sem_wait(&output);
+        printf("lock-x:%d,y:%d\n", x, y);
+        // read(fd_touch2, &buf, sizeof(buf));
+        // 判断当前点击操作是否释放
+        // 1,4,7
+        if (x >= 156 && x <= 234)
+        {
+            if (y >= 96 && y <= 168)
+            {
+                printf("1\n");
+                if (index < 4)
+                {
+                    pw[index] = '1';
+                    index++;
+                    lcd_draw_bmp("password.bmp", 200 + (100 * password_index), 20);
+                    password_index++;
+                }
+            }
+            if (y > 168 && y <= 240)
+            {
+                printf("4\n");
+                if (index < 4)
+                {
+                    pw[index] = '4';
+                    index++;
+                    lcd_draw_bmp("password.bmp", 200 + (100 * password_index), 20);
+                    password_index++;
+                }
+            }
+            if (y > 240 && y <= 312)
+            {
+                printf("7\n");
+                if (index < 4)
+                {
+                    pw[index] = '7';
+                    index++;
+                    lcd_draw_bmp("password.bmp", 200 + (100 * password_index), 20);
+                    password_index++;
+                }
+            }
+        }
+        else if (x >= 273 && x <= 351)
+        {
+            if (y >= 96 && y <= 168)
+            {
+                printf("2\n");
+                if (index < 4)
+                {
+                    pw[index] = '2';
+                    index++;
+                    lcd_draw_bmp("password.bmp", 200 + 100 * password_index, 20);
+                    password_index++;
+                }
+            }
+            if (y > 168 && y <= 240)
+            {
+                printf("5\n");
+                if (index < 4)
+                {
+                    pw[index] = '5';
+                    index++;
+                    lcd_draw_bmp("password.bmp", 200 + 100 * password_index, 20);
+                    password_index++;
+                }
+            }
+            if (y > 240 && y <= 312)
+            {
+                printf("8\n");
+                if (index < 4)
+                {
+                    pw[index] = '8';
+                    index++;
+                    lcd_draw_bmp("password.bmp", 200 + 100 * password_index, 20);
+                    password_index++;
+                }
+            }
+            if (y > 312 && y <= 384)
+            {
+                printf("0\n");
+                if (index < 4)
+                {
+                    pw[index] = '0';
+                    index++;
+                    lcd_draw_bmp("password.bmp", 200 + 100 * password_index, 20);
+                    password_index++;
+                }
+            }
+        }
+        else if (x >= 390 && x <= 468)
+        {
+            if (y >= 96 && y <= 168)
+            {
+                printf("3\n");
+                if (index < 4)
+                {
+                    pw[index] = '3';
+                    index++;
+                    lcd_draw_bmp("password.bmp", 200 + 100 * password_index, 20);
+                    password_index++;
+                }
+            }
+            if (y > 168 && y <= 240)
+            {
+                printf("6\n");
+                if (index < 4)
+                {
+                    pw[index] = '6';
+                    index++;
+                    lcd_draw_bmp("password.bmp", 200 + 100 * password_index, 20);
+                    password_index++;
+                }
+            }
+            if (y > 240 && y <= 312)
+            {
+                printf("9\n");
+                if (index < 4)
+                {
+                    pw[index] = '9';
+                    index++;
+                    lcd_draw_bmp("password.bmp", 200 + 100 * password_index, 20);
+                    password_index++;
+                }
+            }
+        }
+        if (x >= 156 && x <= 234)
+        {
+            if (y > 312 && y <= 384)
+            {
+                printf("del\n");
+                pw[index] = '\0';
+                index--;
+                password_index--;
+                if (index >= 0)
+                {
+                    for (int y = 20; y <= 100; y++)
+                    {
+                        for (int x = 200 + 100 * password_index; x <= 200 + 100 * (password_index + 1); x++)
+                        {
+                            lcd_draw_point(x, y, 0X00FFFFFF);
+                        }
+                    }
+                }
+                if (password_index < 0)
+                {
+                    password_index = 0;
+                }
+                if (index < 0)
+                {
+                    index = 0;
+                }
+            }
+        }
+        else if (x >= 390 && x <= 468)
+        {
+            if (y > 312 && y <= 384)
+            {
+                printf("enter\n");
+                for (int i = 0; i < 7; i++)
+                {
+                    printf("%c", pw[i]);
+                }
+                if (strncmp("1234", pw, 6) == 0)
+                {
+                    printf("登录成功\n");
+                    // 创建一个画板（点阵图）
+                    // 画板宽400，高90，色深32位色即4字节，画板颜色为白色
+                    bitmap *bm = createBitmapWithInit(180, 90, 4, getColor(0, 0, 0, 0));
+                    char buf[] = "登录成功\n2秒后自动\n转跳";
+
+                    fontPrint(f, bm, 0, 0, buf, getColor(0, 0, 255, 0), 0);
+                    show_font_to_lcd(lcd->mp, 20, 120, bm);
+                    // 卸载字体
+                    fontUnload(f);
+                    destroyBitmap(bm);
+                    free(lcd);
+                    sleep(3);
+                    sem_post(&input);
+                   //main_menu();
+                    // lcd_draw_bmp("01.bmp", 0, 0);
+                    // lcd_draw_bmp("main_menu.bmp", 0, 0);
+                    break;
+                }
+                else
+                {
+                    printf("登录失败\n");
+                    index = 0;
+                    memset(pw, 0, 7);
+                    password_index = 0;
+                    bitmap *bm = createBitmapWithInit(180, 90, 4, getColor(0, 0, 0, 0));
+                    char buf[] = "登录失败\n密码有误";
+
+                    fontPrint(f, bm, 0, 0, buf, getColor(0, 0, 0, 255), 0);
+
+                    show_font_to_lcd(lcd->mp, 20, 120, bm);
+
+                    for (int y = 20; y <= 100; y++)
+                    {
+                        for (int x = 200; x <= 600; x++)
+                        {
+                            lcd_draw_point(x, y, 0X00FFFFFF);
+                        }
+                    }
+                    sleep(3);
+                    // 自动清除提示
+                    destroyBitmap(bm);
+                }
+            }
+        }
+        sem_post(&input);
+    }
+    return 1;
+}
 int main_menu()
 {
     lcd_draw_bmp("main_menu.bmp", 0, 0);
@@ -742,15 +974,16 @@ int img_player()
         {
             stop_account_flag = 1;
             printf("解锁\n");
-
+            sleep(1);
             if (account_end_flag == 1)
             {
                 sem_post(&input);
+                lcd_draw_bmp("my_lock.bmp",0,0);
                 lock_menu();
                 break;
             }
         }
-        sem_post(&output);
+        sem_post(&input);
         char bmp_path[100] = "/root/my_test/bmp_resource/";
         char *new_bmp_path = strtok(p->file_name, "\n");
         strcat(bmp_path, new_bmp_path);
@@ -759,7 +992,7 @@ int img_player()
         sleep(3);
     }
     formatLinkList(&head);
-    // lcd_draw_bmp("main_menu.bmp", 0, 0);
+    lcd_draw_bmp("main_menu.bmp", 0, 0);
     return 0;
 }
 void draw_cricle(int a, int b, int r, unsigned int color)

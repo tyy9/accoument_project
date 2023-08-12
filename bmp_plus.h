@@ -42,6 +42,7 @@ int lcd_open();
 void lcd_draw_point(int x,int y,unsigned int color);
 int lcd_draw_bmp(const char *pathname,int x ,int y);
 int lcd_draw_bmp_swiper(const char *pathname,int x ,int y);
+int lcd_draw_bmp_lock(const char *pathname,int x ,int y,int end);
 int lcd_close(void);
 
 int lcd_open(){
@@ -106,6 +107,55 @@ int lcd_draw_bmp(const char *pathname,int x ,int y){
     int y_s=y;
     int x_e=x_s+info_head.biWidth;
     int y_e=y_s+info_head.biHeight;
+
+    int x_pos,y_pos;
+
+    unsigned int color;
+    int i=0;
+    //防止倒置输出
+    for(y_pos=y_e-1; y_pos>=y_s; y_pos--)
+    {
+        for(x_pos=x_s; x_pos<x_e; x_pos++,i+=3)
+        {
+           
+           color=(bmp_buf[i+2]<<16)|(bmp_buf[i+1]<<8)|bmp_buf[i];
+           lcd_draw_point(x_pos,y_pos,color);
+
+        }
+
+    }
+    return 0;
+}
+int lcd_draw_bmp_lock(const char *pathname,int x ,int y,int end){
+    int fd_bmp=open(pathname,O_RDWR);
+    if(fd_bmp<0){
+        perror("open file error\n");
+        return -1;
+    }
+    //位图文件头(54字节)
+    BITMAPFILEHEADER file_head;
+    read(fd_bmp,&file_head,sizeof(file_head));
+    printf("%s图片大小:%d bytes\n",pathname,file_head.bfSize);
+    //位图信息段
+    BITMAPINFOHEADER info_head;
+    read(fd_bmp,&info_head,sizeof(info_head));
+    printf("%s图片尺寸:宽%d 高%d\n",pathname,info_head.biWidth,info_head.biHeight);   
+    printf("%s图片颜色深度:%d\n",pathname,info_head.biBitCount); 
+    int bmp_rgb_size=info_head.biWidth*info_head.biHeight*info_head.biBitCount/8;
+
+    //定义一个变长数组
+    char bmp_buf[bmp_rgb_size];
+
+    read(fd_bmp,bmp_buf,bmp_rgb_size);
+
+    close(fd_bmp);
+
+    //显示图片
+    //起始坐标与结束坐标
+    int x_s=x;
+    int y_s=y;
+    int x_e=x_s+info_head.biWidth;
+    int y_e=y_s+end;
 
     int x_pos,y_pos;
 
