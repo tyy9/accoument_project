@@ -10,22 +10,25 @@
 int main()
 {
     lcd_open();
+
     sem_init(&input, 0, 0);
     sem_init(&output, 0, 1);
     inittouch_device(&fd_touch);
     pthread_t touch;
-    
     pthread_create(&touch,NULL, touch_thread, NULL);
     initLinkList(&head); // 创建无头循环链表
-    while (1)
-    {
-        if(exit_flag){
-            break;
-        }
-        lock_menu();//主线程比子线程的调度优先度要高
-    }
+     my_start();
+    // while (1)
+    // {
+    //     if(exit_flag){
+    //         break;
+    //     }
+    //     lock_menu();//主线程比子线程的调度优先度要高
+    // }
+    my_exit();
     lcd_close();
     close(fd_touch);
     pthread_join(touch, NULL);
+
     return 0;
 }

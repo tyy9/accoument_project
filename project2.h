@@ -28,6 +28,8 @@ int fd_touch, fd_touch2;
 struct input_event buf;
 unsigned int x, y;
 unsigned int x_press, y_press;
+unsigned int main_x, main_y;
+unsigned int main_x_press, main_y_press;
 LinkList head;
 LNode *Tail;         // 尾插
 sem_t input, output; // I/O信号量
@@ -43,6 +45,8 @@ struct LcdDevice *init_lcd();
 int img_player();
 int Draw();
 void draw_cricle(int a, int b, int r, unsigned int color);
+int my_start(); // 开机动画
+int my_exit();  // 关机动画
 // 链表函数
 int initLinkList(LinkList *head);
 int addLinkList(LinkList *head, const char *file_name);
@@ -54,6 +58,122 @@ int isLinkListNull(LinkList head);
 // 线程函数
 void *touch_thread(void *arg);
 void *account_thread(void *arg);
+
+int my_start()
+{
+    // 每次进来先格式化链表数据
+    formatLinkList(&head);
+    // 初始化Lcd
+    char cur_dir[] = ".";          // 当前目录
+    char up_dir[] = "..";          // 上级目录
+    int x_limit = 600, x_cur = 20; // 进度条的限制
+    // 使用scandir保证文件读取顺序正确
+    struct dirent **entry_list;
+    int file_count;
+    int i = 0;
+    file_count = scandir("/root/my_test/movie/", &entry_list, 0, alphasort);
+    while (i < file_count)
+    {
+        struct dirent *file_dir;
+        file_dir = entry_list[i];
+        printf("file:%s\n", file_dir->d_name);
+        if (strcmp(file_dir->d_name, cur_dir) != 0 && strcmp(file_dir->d_name, up_dir) != 0)
+        {
+            addLinkList(&head, file_dir->d_name);
+        }
+        free(file_dir);
+        i++;
+    }
+    free(entry_list);
+    // 播放
+    LNode *p = head;
+    while (p->next != head)
+    {
+        char bmp_path[100] = "/root/my_test/movie/";
+        char *new_bmp_path = strtok(p->file_name, "\n");
+        strcat(bmp_path, new_bmp_path);
+        lcd_draw_bmp(bmp_path, 0, 0);
+        p = p->next;
+        usleep(10000);
+    }
+    formatLinkList(&head);
+    lcd_draw_bmp("start.bmp", 0, 0);
+    // 下滑进入解锁
+    struct input_event buf; // 触摸屏数据结构体
+    int start_x, start_y;
+    int slide_flag = 0;
+    int count = 1;
+    while (1)
+    {
+        if (count > 5)
+        {
+            count = 1;
+        }
+        printf("count=%d\n", count);
+        // 读取触摸屏数据
+        read(fd_touch, &buf, sizeof(buf));
+        if (buf.type == EV_ABS)
+        {
+            // 如果事件类型为绝对位置事件，判断为触摸
+            // 第一次返回X值，第二次返回Y值
+            if (buf.code == ABS_X)
+            {
+                start_x = buf.value * 800 / 1024;
+                printf("start_x=%d\n", start_x);
+            }
+            if (buf.code == ABS_Y)
+            {
+                start_y = buf.value * 480 / 600;
+                printf("start_y=%d\n", start_y);
+            }
+        }
+        // 读取触摸屏数据
+        // sem_wait(&output);
+        printf("start-x:%d,y:%d\n", start_x, start_y);
+        if (count == 2)
+        {
+            if (slide_flag == 1 && start_y * 1024 / 800 <= 480)
+            {
+                lcd_draw_bmp_lock("my_lock.bmp", 0, 0, start_y * 1024 / 800);
+                printf("lcd_x=%d\n", start_y * 1024 / 800);
+            }
+        }
+        // 处于按键或触摸状态
+        if (buf.type == EV_KEY && buf.code == BTN_TOUCH)
+        {
+            if (buf.value)
+            {
+                int start_y_press = start_y;
+                int start_x_press = start_x;
+                if (start_y_press <= 40 * 1024 / 800)
+                {
+                    printf("start_y_press=%d\n", start_y_press);
+                    slide_flag = 1;
+                }
+            }
+            else
+            {
+                if (slide_flag == 1)
+                {
+                    if (start_y >= 50 * 800 / 1024)
+                    {
+                        slide_flag = 0;
+                        lcd_draw_bmp("my_lock.bmp", 0, 0);
+                        //sem_post(&output);//唤醒锁屏
+                        slide_lock_menu();
+                        // lcd_draw_bmp("start_menu.bmp", 0, 0);
+                        break;
+                    }
+                }
+            }
+        }
+        count++;
+    }
+    // sem_post(&input);
+    main_menu();
+    return 0;
+}
+
 int initLinkList(LinkList *head)
 {
     // *head = (LNode *)malloc(sizeof(LNode));
@@ -515,6 +635,7 @@ int slide_lock_menu()
     while (1)
     {
         sem_wait(&output);
+        printf("阻塞锁屏\n");
         printf("lock-x:%d,y:%d\n", x, y);
         // read(fd_touch2, &buf, sizeof(buf));
         // 判断当前点击操作是否释放
@@ -690,7 +811,8 @@ int slide_lock_menu()
                     destroyBitmap(bm);
                     free(lcd);
                     sleep(3);
-                    // sem_post(&input);
+                    //sem_post(&input);
+
                     //  main_menu();
                     //   lcd_draw_bmp("01.bmp", 0, 0);
                     //   lcd_draw_bmp("main_menu.bmp", 0, 0);
@@ -723,6 +845,7 @@ int slide_lock_menu()
             }
         }
         sem_post(&input);
+        printf("唤醒触摸屏\n");
     }
     return 1;
 }
@@ -730,11 +853,11 @@ int main_menu()
 {
     lcd_draw_bmp("main_menu.bmp", 0, 0);
     struct input_event buf; // 触摸屏数据结构体
-    int main_x, main_y;
     int slide_flag = 0;
     int count = 1;
     while (1)
     {
+        //sem_wait(&input);
         if (count > 5)
         {
             count = 1;
@@ -764,6 +887,7 @@ int main_menu()
         {
             if (slide_flag == 1 && main_y * 1024 / 800 <= 480)
             {
+                printf("下滑\n");
                 lcd_draw_bmp_lock("my_lock.bmp", 0, 0, main_y * 1024 / 800);
                 printf("lcd_x=%d\n", main_y * 1024 / 800);
             }
@@ -773,9 +897,9 @@ int main_menu()
         {
             if (buf.value)
             {
-                int main_y_press = main_y;
-                int main_x_press = main_x;
-                if (main_y_press <= 30 * 1024 / 800)
+                main_y_press = main_y;
+                main_x_press = main_x;
+                if (main_y_press <= 20 * 1024 / 800)
                 {
                     printf("main_y_press=%d\n", main_y_press);
                     slide_flag = 1;
@@ -785,11 +909,11 @@ int main_menu()
             {
                 if (slide_flag == 1)
                 {
-                    if (main_y >= 50 * 800 / 1024)
+                    if (main_y >= 100 * 800 / 1024)
                     {
                         slide_flag = 0;
                         lcd_draw_bmp("my_lock.bmp", 0, 0);
-                        sem_post(&input);
+                        sem_post(&output);//唤醒锁屏
                         slide_lock_menu();
                         lcd_draw_bmp("main_menu.bmp", 0, 0);
                     }
@@ -800,6 +924,7 @@ int main_menu()
                     {
                         printf("更新资源\n");
                         update_file();
+                        // main_x=main_y=0;
                         // sem_post(&input);
                     }
                 }
@@ -808,8 +933,9 @@ int main_menu()
                     if (main_y >= 30 * 480 / 600 && main_y <= 100 * 480 / 600)
                     {
                         printf("播放器\n");
-                        sem_post(&input); // 唤醒触屏子线程
+                        // sem_post(&input); // 唤醒触屏子线程
                         img_player();
+                        // main_x=main_y=0;
                     }
                 }
                 if (main_x > 220 * 800 / 1024 && main_x <= 320 * 800 / 1024)
@@ -819,6 +945,7 @@ int main_menu()
                         printf("刮刮乐\n");
                         // sem_post(&input);
                         Draw();
+                        //main_x = main_y = 0;
                     }
                 }
                 if (main_x >= 720 * 800 / 1024 && main_x <= 800 * 800 / 1024)
@@ -827,7 +954,8 @@ int main_menu()
                     {
                         printf("退出\n");
                         exit_flag = 1;
-                        // sem_post(&input);
+                        sem_post(&input);
+                        sleep(1); // 等待触摸屏线程死亡
                         break;
                     }
                 }
@@ -835,7 +963,7 @@ int main_menu()
         }
         count++;
     }
-    sem_post(&input);
+    // sem_post(&input);
     return 0;
 }
 
@@ -1045,12 +1173,16 @@ int img_player()
             sleep(1); // 等待字体线程反应
             if (account_end_flag == 1)
             {
-                sem_post(&input);
+                stop_account_flag = 0;
+                account_end_flag = 0;
+                // sem_post(&input);
                 lcd_draw_bmp("my_lock.bmp", 0, 0);
-                lock_menu();
+                slide_lock_menu();
+                y_press = y = 0;
                 break;
             }
         }
+        sem_post(&output); // 即使没触摸到也要自动唤醒
         sem_post(&input);
         char bmp_path[100] = "/root/my_test/bmp_resource/";
         char *new_bmp_path = strtok(p->file_name, "\n");
@@ -1095,7 +1227,7 @@ int Draw()
     int num = rand() % 10 + 1; // 1-10随机数
     while (1)
     {
-        if (count > 5)
+        if (count > 6)
         {
             count = 1;
         }
@@ -1169,7 +1301,7 @@ int Draw()
         }
         count++;
     }
-    sem_post(&input);
+    // sem_post(&input);
     close(fd_touch2);
     lcd_draw_bmp("main_menu.bmp", 0, 0);
     return 0;
@@ -1180,7 +1312,8 @@ void *touch_thread(void *arg)
     struct input_event buf; // 触摸屏数据结构体
     while (1)
     {
-        if(exit_flag){
+        if (exit_flag)
+        {
             pthread_exit(NULL);
         }
 
@@ -1189,6 +1322,7 @@ void *touch_thread(void *arg)
         if (flag == 0)
         {
             sem_wait(&input); // P
+            printf("阻塞触摸屏\n");
             flag = 1;
         }
 
@@ -1222,7 +1356,9 @@ void *touch_thread(void *arg)
             else
             {
                 flag = 0;
+                printf("唤醒output\n");
                 sem_post(&output);
+
             }
         }
     }
@@ -1260,4 +1396,44 @@ void *account_thread(void *arg)
             usleep(100);
         }
     }
+}
+int my_exit()
+{
+    // 每次进来先格式化链表数据
+    formatLinkList(&head);
+    // 初始化Lcd
+    char cur_dir[] = ".";          // 当前目录
+    char up_dir[] = "..";          // 上级目录
+    int x_limit = 600, x_cur = 20; // 进度条的限制
+    // 使用scandir保证文件读取顺序正确
+    struct dirent **entry_list;
+    int file_count;
+    int i = 0;
+    file_count = scandir("/root/my_test/movie/", &entry_list, 0, alphasort);
+    while (i < file_count)
+    {
+        struct dirent *file_dir;
+        file_dir = entry_list[i];
+        printf("file:%s\n", file_dir->d_name);
+        if (strcmp(file_dir->d_name, cur_dir) != 0 && strcmp(file_dir->d_name, up_dir) != 0)
+        {
+            addLinkList(&head, file_dir->d_name);
+        }
+        free(file_dir);
+        i++;
+    }
+    free(entry_list);
+    // 播放
+    LNode *p = head;
+    while (p->prev != head)
+    {
+        char bmp_path[100] = "/root/my_test/movie/";
+        char *new_bmp_path = strtok(p->file_name, "\n");
+        strcat(bmp_path, new_bmp_path);
+        lcd_draw_bmp(bmp_path, 0, 0);
+        p = p->prev;
+        usleep(10000);
+    }
+    formatLinkList(&head);
+    return 0;
 }
