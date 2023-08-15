@@ -1270,6 +1270,64 @@ int Draw()
     struct input_event buf; // 触摸屏数据结构体
     int count = 1, draw_count = 0;
     int num = rand() % 10 + 1; // 1-10随机数
+    // int num = 10;
+    char bmp_buf[800 * 480 * 3];
+    int fd_bmp;
+    int color;
+    char reverse_buf[800 * 480 * 3] = {0}; // 由于开发的lcd支持32位色深所以还是需要*4字节
+    if (num % 10 == 1)
+    {
+        fd_bmp = open("bouns1.bmp", O_RDONLY);
+        read(fd_bmp, bmp_buf, 800 * 480 * 3);
+        int i, j;
+        for (int i = 479, k = 0; i >= 0; i--, k++)
+        {
+            for (int j = 0; j < 800 * 3; j++)
+            {
+                reverse_buf[k * 800 * 3 + j] = bmp_buf[i * 800 * 3 + j];
+            }
+        }
+    }
+    else if (num % 10 > 1 && num % 10 <= 3)
+    {
+        fd_bmp = open("bouns2.bmp", O_RDONLY);
+        read(fd_bmp, bmp_buf, 800 * 480 * 3);
+        int i, j;
+        for (int i = 479, k = 0; i >= 0; i--, k++)
+        {
+            for (int j = 0; j < 800 * 3; j++)
+            {
+                reverse_buf[k * 800 * 3 + j] = bmp_buf[i * 800 * 3 + j];
+            }
+        }
+    }
+    else if (num % 10 > 3 && num % 10 <= 7)
+    {
+        fd_bmp = open("bouns3.bmp", O_RDONLY);
+        read(fd_bmp, bmp_buf, 800 * 480 * 3);
+        int i, j;
+        for (int i = 479, k = 0; i >= 0; i--, k++)
+        {
+            for (int j = 0; j < 800 * 3; j++)
+            {
+                reverse_buf[k * 800 * 3 + j] = bmp_buf[i * 800 * 3 + j];
+            }
+        }
+    }
+    else if (num % 10 > 7 && num % 10 <= 9 || num % 10 == 0)
+    {
+        fd_bmp = open("bouns4.bmp", O_RDONLY);
+        read(fd_bmp, bmp_buf, 800 * 480 * 3);
+        int i, j;
+        for (int i = 479, k = 0; i >= 0; i--, k++)
+        {
+            for (int j = 0; j < 800 * 3; j++)
+            {
+                reverse_buf[k * 800 * 3 + j] = bmp_buf[i * 800 * 3 + j];
+            }
+        }
+    }
+
     while (1)
     {
         if (count > 6)
@@ -1299,61 +1357,18 @@ int Draw()
             // 需要换算，因为画圆函数是以lcd的内存地址为准
 
             // 防止越界，边界-半径
-            if (cur_x >= 100 && cur_x <= 715)
+            if (cur_x >= 75 && cur_x <= 745)
             {
-                if (cur_y >= 255 && cur_y <= 440)
+                if (cur_y >= 225 && cur_y <= 440)
                 {
                     printf("cur_x:%d,cur_y=%d,draw_count:%d\n", cur_x, cur_y, draw_count);
-                    draw_cricle(cur_x, cur_y, 20, 0X00FFFFFF);
-                    draw_count++;
-                    // if (draw_count == 100)
-                    // {
-                    //     printf("num:%d\n", num);
-                    //     if (num % 10 == 1)
-                    //     {
-                    //         lcd_draw_bmp("bouns1.bmp", 0, 0);
-                    //     }
-                    //     else if (num % 10 > 1 && num % 10 <= 3)
-                    //     {
-                    //         lcd_draw_bmp("bouns2.bmp", 0, 0);
-                    //     }
-                    //     else if (num % 10 > 3 && num % 10 <= 7)
-                    //     {
-                    //         lcd_draw_bmp("bouns3.bmp", 0, 0);
-                    //     }
-                    //     else if (num % 10 > 7 && num % 10 <= 9 || num % 10 == 0)
-                    //     {
-                    //         lcd_draw_bmp("bouns4.bmp", 0, 0);
-                    //     }
-                    //     sleep(4);
-                    //     break;
-                    // }
-                    if (draw_count == 100)
+                    for (int i = 0; i < 30; i++)
                     {
-                        printf("num:%d\n", num);
-                        if (num % 10 == 1)
-                        {
-                            lcd_draw_bmp("bouns1.bmp", 0, 0);
-                        }
-                        else if (num % 10 > 1 && num % 10 <= 3)
-                        {
-                            lcd_draw_bmp("bouns2.bmp", 0, 0);
-                        }
-                        else if (num % 10 > 3 && num % 10 <= 7)
-                        {
-                            lcd_draw_bmp("bouns3.bmp", 0, 0);
-                        }
-                        else if (num % 10 > 7 && num % 10 <= 9 || num % 10 == 0)
-                        {
-                            lcd_draw_bmp("bouns4.bmp", 0, 0);
-                        }
-                        sleep(4);
-                        break;
+                        lcd_draw_point_mydraw(cur_x + i, cur_y, reverse_buf);
                     }
-                    count = 1;
-                    continue;
                 }
             }
+            // int color=color_buf[cur_y*800*4+cur_x]|color_buf[cur_y*800*4+cur_x+1]<<8|color_buf[cur_y*800*4+cur_x+2]<<16;
         }
         // 判断当前点击操作是否释放
         if (buf.type == EV_KEY && buf.code == BTN_TOUCH)
@@ -1364,14 +1379,20 @@ int Draw()
             }
             else
             {
+                if(draw_x>=0&&draw_x<=75*1024/800){
+                    if(draw_y>=0&&draw_y<=90*600/480){
+                        printf("退出\n");
+                        break;
+                    }
+                }
             }
         }
         count++;
     }
-    // sem_post(&input);
-    lcd_draw_bmp("main_menu.bmp", 0, 0);
+    lcd_draw_bmp("main_menu.bmp",0,0);
     return 0;
 }
+
 void *touch_thread(void *arg)
 {
     int flag = 0;
