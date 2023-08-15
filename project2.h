@@ -38,6 +38,7 @@ sem_t input, output; // I/O信号量
 int stop_account_flag = 0, account_end_flag = 0;
 int exit_flag = 0;
 int thread_stop_flag = 0;
+int thread_exit = 0;
 // 函数声明
 int inittouch_device(int *fd);
 int lock_menu();
@@ -638,7 +639,7 @@ int slide_lock_menu()
     while (1)
     {
         // sem_wait(&output);
-        //printf("阻塞锁屏\n");
+        // printf("阻塞锁屏\n");
         printf("lock-x:%d,y:%d\n", lock_x, lock_y);
         // read(fd_touch2, &buf, sizeof(buf));
         // 判断当前点击操作是否释放
@@ -880,7 +881,7 @@ int slide_lock_menu()
             }
         }
         // sem_post(&input);
-        //printf("唤醒触摸屏\n");
+        // printf("唤醒触摸屏\n");
     }
     return 1;
 }
@@ -1196,6 +1197,8 @@ int img_player()
     showLinkList(head);
     pthread_t account;
     pthread_create(&account, NULL, account_thread, NULL);
+    pthread_t touch;
+    pthread_create(&touch, NULL, touch_thread, NULL);
     while (1)
     {
         stop_account_flag = 0;
@@ -1210,9 +1213,12 @@ int img_player()
             {
                 stop_account_flag = 0;
                 account_end_flag = 0;
-                thread_stop_flag = 1;
-                sleep(1);
-                // sem_post(&input);
+                // thread_stop_flag = 1; // 主动阻塞
+                // sem_post(&input);     // 唤醒触摸屏
+                thread_exit = 1;
+                sem_post(&input);
+                sleep(2);
+                // sem_wait(&input);
                 lcd_draw_bmp("my_lock.bmp", 0, 0);
                 slide_lock_menu();
                 // y_press = y = 0;
@@ -1229,6 +1235,8 @@ int img_player()
         sleep(3);
     }
     formatLinkList(&head);
+    // pthread_join(account,NULL);
+    // pthread_join(touch,NULL);
     lcd_draw_bmp("main_menu.bmp", 0, 0);
     return 0;
 }
@@ -1298,6 +1306,28 @@ int Draw()
                     printf("cur_x:%d,cur_y=%d,draw_count:%d\n", cur_x, cur_y, draw_count);
                     draw_cricle(cur_x, cur_y, 20, 0X00FFFFFF);
                     draw_count++;
+                    // if (draw_count == 100)
+                    // {
+                    //     printf("num:%d\n", num);
+                    //     if (num % 10 == 1)
+                    //     {
+                    //         lcd_draw_bmp("bouns1.bmp", 0, 0);
+                    //     }
+                    //     else if (num % 10 > 1 && num % 10 <= 3)
+                    //     {
+                    //         lcd_draw_bmp("bouns2.bmp", 0, 0);
+                    //     }
+                    //     else if (num % 10 > 3 && num % 10 <= 7)
+                    //     {
+                    //         lcd_draw_bmp("bouns3.bmp", 0, 0);
+                    //     }
+                    //     else if (num % 10 > 7 && num % 10 <= 9 || num % 10 == 0)
+                    //     {
+                    //         lcd_draw_bmp("bouns4.bmp", 0, 0);
+                    //     }
+                    //     sleep(4);
+                    //     break;
+                    // }
                     if (draw_count == 100)
                     {
                         printf("num:%d\n", num);
@@ -1348,25 +1378,30 @@ void *touch_thread(void *arg)
     struct input_event buf; // 触摸屏数据结构体
     while (1)
     {
-        if (exit_flag)
-        {
-            pthread_exit(NULL);
-        }
-        if (thread_stop_flag == 1)
-        {
-            printf("thread--thread_stop_flag=%d\n", thread_stop_flag);
-            thread_stop_flag = 0;
-            flag = 0;
-        }
+
         // 读取触摸屏数据
         read(fd_touch, &buf, sizeof(buf));
+        printf("thread is running\n");
         if (flag == 0)
         {
             sem_wait(&input); // P
             printf("阻塞触摸屏\n");
             flag = 1;
         }
-
+        if (thread_exit)
+        {
+            thread_exit = 0;
+            printf("线程死亡\n");
+            pthread_exit(NULL);
+        }
+        // if (thread_stop_flag == 1)
+        // {
+        //     printf("thread--thread_stop_flag=%d\n", thread_stop_flag);
+        //     thread_stop_flag = 0;
+        //     //asleep(3);
+        //     flag = 0;
+        //     continue;
+        // }
         if (buf.type == EV_ABS)
         {
             // 如果事件类型为绝对位置事件，判断为触摸
@@ -1430,6 +1465,7 @@ void *account_thread(void *arg)
             destroyBitmap(bm);
             if (stop_account_flag == 1)
             {
+                printf("字体滚动播报线程死亡\n");
                 account_end_flag = 1;
                 pthread_exit(NULL);
             }

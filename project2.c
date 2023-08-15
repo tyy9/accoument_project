@@ -14,8 +14,7 @@ int main()
     sem_init(&input, 0, 0);
     sem_init(&output, 0, 1);
     inittouch_device(&fd_touch);
-    pthread_t touch;
-    pthread_create(&touch,NULL, touch_thread, NULL);
+  
     initLinkList(&head); // 创建无头循环链表
      my_start();
     // while (1)
@@ -28,7 +27,7 @@ int main()
     my_exit();
     lcd_close();
     close(fd_touch);
-    pthread_join(touch, NULL);
+    //pthread_join(touch, NULL);
 
     return 0;
 }
